@@ -14,6 +14,11 @@ from .datahandler import (
     load_tokenizer_bundle,
     save_tokenizer_bundle,
 )
+from .downstream import (
+    PROBLEM_LOAN_STATUSES,
+    build_loan_outcome_table,
+    read_loan_outcomes,
+)
 from .lifelong_tokenizer import LifelongEventTokenizer
 from .profile_tokenizer import ProfileTokenizer
 from .tokenizer import EventTokenizer
@@ -45,6 +50,9 @@ __all__ = [
     "FinBERTLiteCzechDataset",
     "collate_account_records",
     "apply_value_mlm_mask",
+    "PROBLEM_LOAN_STATUSES",
+    "read_loan_outcomes",
+    "build_loan_outcome_table",
     "TransformerConfig",
     "apply_rotary_embedding",
     "MultiHeadAttention",

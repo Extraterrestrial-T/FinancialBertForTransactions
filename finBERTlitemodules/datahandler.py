@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -102,6 +102,8 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         max_events: int = 64,
         random_cutoff: bool = True,
         seed: int = 17,
+        fixed_cutoffs_by_account: Mapping[int, datetime] | None = None,
+        targets_by_account: Mapping[int, int] | None = None,
     ) -> None:
         if max_events < 1:
             raise ValueError("max_events must be positive")
@@ -121,6 +123,20 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         self.random_cutoff = random_cutoff
         self.seed = seed
         self.epoch = 0
+        self.fixed_cutoffs_by_account = (
+            {int(account_id): cutoff for account_id, cutoff in fixed_cutoffs_by_account.items()}
+            if fixed_cutoffs_by_account is not None
+            else None
+        )
+        self.targets_by_account = (
+            {int(account_id): int(target) for account_id, target in targets_by_account.items()}
+            if targets_by_account is not None
+            else None
+        )
+        if self.fixed_cutoffs_by_account is not None and random_cutoff:
+            raise ValueError("fixed_cutoffs_by_account requires random_cutoff=False")
+        if self.targets_by_account is not None and self.fixed_cutoffs_by_account is None:
+            raise ValueError("targets_by_account requires fixed_cutoffs_by_account")
 
         tables = read_lifelong_source_tables(source_directory)
         self.account_states = build_account_states(self.profiles, tables)
@@ -132,9 +148,12 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             int(account_id): transaction_from_rows(group)
             for account_id, group in self.events.groupby("account_id", sort=False)
         }
-        self.account_ids = tuple(
-            sorted(set(self.account_states).intersection(self.transactions_by_account))
-        )
+        account_ids = set(self.account_states).intersection(self.transactions_by_account)
+        if self.fixed_cutoffs_by_account is not None:
+            account_ids.intersection_update(self.fixed_cutoffs_by_account)
+        if self.targets_by_account is not None:
+            account_ids.intersection_update(self.targets_by_account)
+        self.account_ids = tuple(sorted(account_ids))
         if not self.account_ids:
             raise ValueError("no accounts have both profile data and transactions")
 
@@ -182,9 +201,16 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             "event_value_ids": tuple(event.value_ids for event in tokenized_events),
             "history_rope_time": temporal.history_rope_coordinates,
             "calendar_features": temporal.calendar_features,
+            **(
+                {"target": self.targets_by_account[account_id]}
+                if self.targets_by_account is not None
+                else {}
+            ),
         }
 
     def _choose_cutoff(self, account_id: int, index: int) -> datetime:
+        if self.fixed_cutoffs_by_account is not None:
+            return self.fixed_cutoffs_by_account[account_id]
         cutoff_days = self.cutoff_days_by_account[account_id]
         if not self.random_cutoff:
             return cutoff_days[-1]
@@ -264,7 +290,7 @@ def collate_account_records(
         )
         event_mask[batch_index, :event_length] = True
 
-    return {
+    batch = {
         "account_ids": torch.tensor([record["account_id"] for record in records], dtype=torch.long),
         "cutoff_times": tuple(record["cutoff_time"] for record in records),
         "profile_key_ids": profile_key_ids,
@@ -277,6 +303,12 @@ def collate_account_records(
         "calendar_features": calendar_features,
         "event_mask": event_mask,
     }
+    has_targets = ["target" in record for record in records]
+    if any(has_targets) and not all(has_targets):
+        raise ValueError("either every record must have a target or none may have one")
+    if all(has_targets):
+        batch["targets"] = torch.tensor([record["target"] for record in records], dtype=torch.long)
+    return batch
 
 
 def apply_value_mlm_mask(
