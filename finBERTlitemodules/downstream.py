@@ -22,6 +22,10 @@ def read_loan_outcomes(source_directory: str | Path) -> pd.DataFrame:
     representation learning to construct a downstream label.
     """
     loans = read_lifelong_source_tables(source_directory).loans.copy()
+    # ``read_lifelong_source_tables`` preserves the source name used by
+    # ``fin_loan.tsv``.  The downstream task uses the more explicit internal
+    # name below so the cutoff logic reads naturally.
+    loans = loans.rename(columns={"grant_date": "granted_date"})
     if loans["account_id"].duplicated().any():
         raise ValueError("this task expects at most one loan outcome per account")
     loans["granted_date"] = pd.to_datetime(loans["granted_date"])
