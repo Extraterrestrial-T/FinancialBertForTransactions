@@ -9,25 +9,21 @@ from typing import Iterator
 import numpy as np
 import pandas as pd
 
-from .lifelong_adapter import read_lifelong_source_tables
-
-
 PROBLEM_LOAN_STATUSES = frozenset({"B", "D"})
 """Observed problematic-loan statuses in the PKDD/Czech-bank data."""
 
 
-def read_loan_outcomes(source_directory: str | Path) -> pd.DataFrame:
-    """Read the target-only loan outcome fields without exposing them to encoders.
+def read_loan_outcomes(loan_outcomes_path: str | Path) -> pd.DataFrame:
+    """Read the processed target-only loan table for exploratory evaluation.
 
-    ``loan_status`` is intentionally absent from ``LifelongEvent`` fields and
-    therefore cannot enter a tokenized profile.  It is read here only after
-    representation learning to construct a downstream label.
+    Loan status is intentionally absent from profile milestones and event
+    inputs. It becomes available only here, when a leakage-safe task table is
+    constructed after representation learning.
     """
-    loans = read_lifelong_source_tables(source_directory).loans.copy()
-    # ``read_lifelong_source_tables`` preserves the source name used by
-    # ``fin_loan.tsv``.  The downstream task uses the more explicit internal
-    # name below so the cutoff logic reads naturally.
-    loans = loans.rename(columns={"grant_date": "granted_date"})
+    loans = pd.read_parquet(loan_outcomes_path).copy()
+    required = {"account_id", "granted_date", "loan_status"}
+    if missing := required.difference(loans.columns):
+        raise ValueError(f"loan outcomes are missing columns: {sorted(missing)}")
     if loans["account_id"].duplicated().any():
         raise ValueError("this task expects at most one loan outcome per account")
     loans["granted_date"] = pd.to_datetime(loans["granted_date"])

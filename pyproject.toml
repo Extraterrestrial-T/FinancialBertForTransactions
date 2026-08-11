@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pragma-lite"
+version = "0.1.0"
+description = "A compact, reproducible PRAGMA-inspired financial event encoder experiment."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "PRAGMA-lite contributors"}]
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyarrow>=14",
+    "scikit-learn>=1.4",
+    "torch>=2.2",
+]
+
+[project.optional-dependencies]
+notebooks = [
+    "ipykernel>=6.29",
+    "jupyterlab>=4.1",
+    "matplotlib>=3.8",
+]
+test = ["pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+pragma_lite = ["data/vocabulary.json"]

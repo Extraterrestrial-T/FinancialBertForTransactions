@@ -12,9 +12,9 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.downstream import build_loan_outcome_table  # noqa: E402
+from pragma_lite.tasks.definitions import build_loan_outcome_table  # noqa: E402
 
 
 class LoanOutcomeTaskTest(unittest.TestCase):

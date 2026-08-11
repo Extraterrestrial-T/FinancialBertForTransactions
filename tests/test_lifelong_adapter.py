@@ -11,31 +11,39 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.data_models import materialize_profile_state
-from finBERTlitemodules.lifelong_adapter import (
-    build_account_states,
-    read_lifelong_source_tables,
+from pragma_lite.data.models import materialize_profile_state
+from pragma_lite.data.lifelong import (
+    build_account_states_from_processed,
 )
-from finBERTlitemodules.lifelong_tokenizer import LifelongEventTokenizer
-from finBERTlitemodules.profile_tokenizer import ProfileTokenizer
+from pragma_lite.data.lifelong_tokenizer import LifelongEventTokenizer
+from pragma_lite.data.profile_tokenizer import ProfileTokenizer
 
 
-SOURCE_DIRECTORY = ROOT / "financial_db_Teradata"
 TRAIN_PROFILES = ROOT / "data" / "processed" / "czech_bank" / "profile_train.parquet"
+LIFELONG_EVENTS = ROOT / "data" / "processed" / "czech_bank" / "lifelong_events.parquet"
 CUTOFF = pd.Timestamp("2018-12-31")
 
 
 @unittest.skipUnless(
-    SOURCE_DIRECTORY.exists() and TRAIN_PROFILES.exists(),
-    "Czech source TSV files or processed training profiles are missing",
+    LIFELONG_EVENTS.exists() and TRAIN_PROFILES.exists(),
+    "processed Czech milestones or training profiles are missing",
 )
 class LifelongAdapterTest(unittest.TestCase):
     def test_build_and_tokenize_profile_milestones(self) -> None:
-        tables = read_lifelong_source_tables(SOURCE_DIRECTORY)
-        profiles = pd.read_parquet(TRAIN_PROFILES)
-        account_states = build_account_states(profiles, tables)
+        all_profiles = pd.read_parquet(TRAIN_PROFILES)
+        all_lifelong_events = pd.read_parquet(LIFELONG_EVENTS)
+        eligible_account_ids = (
+            all_lifelong_events.groupby("account_id").size().loc[lambda counts: counts.gt(1)]
+            .head(12)
+            .index
+        )
+        profiles = all_profiles.loc[all_profiles["account_id"].isin(eligible_account_ids)]
+        lifelong_events = all_lifelong_events.loc[
+            all_lifelong_events["account_id"].isin(eligible_account_ids)
+        ]
+        account_states = build_account_states_from_processed(profiles, lifelong_events)
 
         all_events = [
             event

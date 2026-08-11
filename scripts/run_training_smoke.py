@@ -8,7 +8,7 @@ batch.  It nevertheless exercises the complete path:
 
 From the repository root:
 
-    .\\FinBert\\Scripts\\python.exe demos\\run_training_smoke.py
+    python scripts/run_training_smoke.py
 
 To make a CPU-only full epoch run (slow), use ``--steps 0``.  This is still a
 training smoke script: it intentionally does not add checkpointing, a learning
@@ -29,10 +29,11 @@ from torch.utils.data import DataLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     EventMLMDemoModel,
     FinBERTLiteCzechDataset,
     TransformerConfig,
@@ -104,14 +105,14 @@ def main() -> None:
         args.device if args.device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
     )
     processed = ROOT / "data" / "processed" / "czech_bank"
-    source_directory = ROOT / "financial_db_Teradata"
+    lifelong_events_path = processed / "lifelong_events.parquet"
     paths = {
         "train_events": processed / "events_train.parquet",
         "train_profiles": processed / "profile_train.parquet",
         "valid_events": processed / "events_valid.parquet",
         "valid_profiles": processed / "profile_valid.parquet",
     }
-    missing = [str(path) for path in (*paths.values(), source_directory) if not path.exists()]
+    missing = [str(path) for path in (*paths.values(), lifelong_events_path) if not path.exists()]
     if missing:
         raise FileNotFoundError("missing required Czech data:\n" + "\n".join(missing))
 
@@ -119,13 +120,13 @@ def main() -> None:
     # strictly on train data.  Validation reuses the resulting bundle.
     train_events = pd.read_parquet(paths["train_events"])
     train_profiles = pd.read_parquet(paths["train_profiles"])
-    tokenizers = fit_tokenizer_bundle(train_events, train_profiles, source_directory)
+    tokenizers = fit_tokenizer_bundle(train_events, train_profiles, lifelong_events_path)
     del train_events, train_profiles
 
     train_dataset = FinBERTLiteCzechDataset(
         paths["train_events"],
         paths["train_profiles"],
-        source_directory,
+        lifelong_events_path,
         tokenizers,
         max_events=args.max_events,
         random_cutoff=True,
@@ -134,7 +135,7 @@ def main() -> None:
     valid_dataset = FinBERTLiteCzechDataset(
         paths["valid_events"],
         paths["valid_profiles"],
-        source_directory,
+        lifelong_events_path,
         tokenizers,
         max_events=args.max_events,
         random_cutoff=False,

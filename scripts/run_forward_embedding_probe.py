@@ -22,15 +22,18 @@ from torch.utils.data import DataLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     EventMLMDemoModel,
     FinBERTLiteCzechDataset,
     TransformerConfig,
     build_cashflow_stress_table,
     build_future_value_table,
+    clustered_binary_bootstrap_intervals,
+    clustered_regression_bootstrap_intervals,
     collate_account_records,
     fit_binary_logistic_benchmark,
     fit_low_balance_threshold,
@@ -57,9 +60,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cashflow-horizon-days", type=int, default=60)
     parser.add_argument("--low-balance-quantile", type=float, default=0.10)
     parser.add_argument("--value-horizon-days", type=int, default=180)
+    parser.add_argument("--bootstrap-samples", type=int, default=250)
     args = parser.parse_args()
-    if args.batch_size < 1 or args.cutoff_stride_days < 1 or args.min_history_transactions < 1:
-        parser.error("batch size, cutoff stride, and minimum history must be positive")
+    if args.batch_size < 1 or args.cutoff_stride_days < 1 or args.min_history_transactions < 1 or args.bootstrap_samples < 1:
+        parser.error("batch size, cutoff stride, minimum history, and bootstrap-samples must be positive")
     return args
 
 
@@ -90,7 +94,7 @@ def _extract_embeddings(
     *,
     batch_size: int,
     device: torch.device,
-) -> tuple[list[str], np.ndarray, np.ndarray]:
+) -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray]:
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -102,6 +106,7 @@ def _extract_embeddings(
     sample_ids: list[str] = []
     embeddings: list[np.ndarray] = []
     labels: list[np.ndarray] = []
+    account_ids: list[np.ndarray] = []
     model.eval()
     with torch.no_grad():
         for raw_batch in loader:
@@ -110,7 +115,8 @@ def _extract_embeddings(
             sample_ids.extend(raw_batch["sample_ids"])
             embeddings.append(output.account_embedding.cpu().numpy())
             labels.append(raw_batch["targets"].cpu().numpy())
-    return sample_ids, np.concatenate(embeddings), np.concatenate(labels)
+            account_ids.append(raw_batch["account_ids"].cpu().numpy())
+    return sample_ids, np.concatenate(embeddings), np.concatenate(labels), np.concatenate(account_ids)
 
 
 def main() -> None:
@@ -119,7 +125,7 @@ def main() -> None:
     if not checkpoint_path.exists():
         raise FileNotFoundError(f"checkpoint not found: {checkpoint_path}")
     processed = ROOT / "data" / "processed" / "czech_bank"
-    source = ROOT / "financial_db_Teradata"
+    lifelong_events_path = processed / "lifelong_events.parquet"
     paths = {
         split: {
             "events": processed / f"events_{split}.parquet",
@@ -127,7 +133,7 @@ def main() -> None:
         }
         for split in ("train", "valid", "test")
     }
-    for path in [source, processed / "account_split_manifest.parquet", *(path for values in paths.values() for path in values.values())]:
+    for path in [lifelong_events_path, processed / "account_split_manifest.parquet", *(path for values in paths.values() for path in values.values())]:
         if not path.exists():
             raise FileNotFoundError(f"missing required data: {path}")
 
@@ -194,22 +200,24 @@ def main() -> None:
 
     embeddings: dict[str, pd.DataFrame] = {}
     targets: dict[str, np.ndarray] = {}
+    account_ids: dict[str, np.ndarray] = {}
     for split in ("train", "valid", "test"):
         split_rows = task_table.loc[task_table["split"].eq(split)]
         dataset = FinBERTLiteCzechDataset(
             paths[split]["events"],
             paths[split]["profiles"],
-            source,
+            lifelong_events_path,
             tokenizers,
             max_events=max_events,
             random_cutoff=False,
             task_table=split_rows,
         )
-        sample_ids, vectors, labels = _extract_embeddings(
+        sample_ids, vectors, labels, accounts = _extract_embeddings(
             model, dataset, batch_size=args.batch_size, device=device
         )
         embeddings[split] = pd.DataFrame(vectors, index=sample_ids)
         targets[split] = labels.astype(np.int64 if args.task == "cashflow_stress" else np.float64)
+        account_ids[split] = accounts.astype(np.int64)
         print(f"{split}: n={len(labels)}")
 
     report: dict[str, Any] = {
@@ -225,6 +233,7 @@ def main() -> None:
             "cached_task_table": str(args.task_table) if args.task_table is not None else None,
         },
         "sample_counts": {split: int(len(targets[split])) for split in targets},
+        "account_cluster_bootstrap_samples": args.bootstrap_samples,
         "protocol_caveat": (
             "The MLM checkpoint was not horizon-restricted to every downstream cutoff. "
             "Treat this as an exploratory frozen-embedding transfer result, not a "
@@ -236,11 +245,29 @@ def main() -> None:
             embeddings["train"], targets["train"], embeddings["valid"], targets["valid"],
             embeddings["test"], targets["test"],
         )
+        probabilities = {
+            split: benchmark.estimator.predict_proba(embeddings[split])[:, 1]
+            for split in ("valid", "test")
+        }
         report.update(
             {
                 "low_balance_threshold": threshold,
                 "horizon_days": args.cashflow_horizon_days,
-                "frozen_embedding_logistic_probe": benchmark.report(),
+                "frozen_embedding_logistic_probe": {
+                    **benchmark.report(),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["valid"], probabilities["valid"], account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["test"], probabilities["test"], account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                },
             }
         )
     else:
@@ -248,11 +275,28 @@ def main() -> None:
             embeddings["train"], targets["train"], embeddings["valid"], targets["valid"],
             embeddings["test"], targets["test"],
         )
+        predictions = {
+            split: benchmark.estimator.predict(embeddings[split]) for split in ("valid", "test")
+        }
         report.update(
             {
                 "horizon_days": args.value_horizon_days,
                 "target": "log1p(sum(abs(amount)) in future window)",
-                "frozen_embedding_ridge_probe": benchmark.report(),
+                "frozen_embedding_ridge_probe": {
+                    **benchmark.report(),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["valid"], predictions["valid"], account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["test"], predictions["test"], account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                },
             }
         )
 

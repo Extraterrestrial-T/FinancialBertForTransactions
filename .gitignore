@@ -81,6 +81,20 @@ target/
 # Local MLM training artifacts
 checkpoints/
 
+# Project-local source data and durable experiment artifacts.  The compact
+# data/processed/czech_bank/ directory is intentionally not ignored.
+/financial_db_Teradata/
+/detail/
+/MBD-mini/
+/indian_banking_transactions.csv
+/data/raw/
+/FinBert/
+/artifacts/
+/adapters/
+/reports/
+*.pt
+*.ckpt
+
 # IPython
 profile_default/
 ipython_config.py

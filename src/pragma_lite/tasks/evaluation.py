@@ -243,6 +243,59 @@ def regression_metrics(targets: np.ndarray, predictions: np.ndarray) -> dict[str
     }
 
 
+def clustered_binary_bootstrap_intervals(
+    labels: np.ndarray,
+    probabilities: np.ndarray,
+    account_ids: np.ndarray,
+    *,
+    samples: int = 1_000,
+    seed: int = 23,
+) -> dict[str, tuple[float, float]]:
+    """Bootstrap binary metrics by account, preserving repeated snapshots.
+
+    Forward-looking task tables can contain several dated records per account.
+    Resampling rows would overstate precision, so each draw resamples account
+    clusters and takes every associated snapshot with it.
+    """
+    labels = _as_binary_labels(labels)
+    probabilities = _as_probabilities(probabilities)
+    indices_by_account = _cluster_indices(account_ids, labels.size)
+    from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
+
+    values: dict[str, list[float]] = {"roc_auc": [], "average_precision": [], "brier_score": []}
+    for indices in _iter_cluster_bootstrap_indices(indices_by_account, samples=samples, seed=seed):
+        sampled_labels = labels[indices]
+        if np.unique(sampled_labels).size != 2:
+            continue
+        sampled_probabilities = probabilities[indices]
+        values["roc_auc"].append(float(roc_auc_score(sampled_labels, sampled_probabilities)))
+        values["average_precision"].append(float(average_precision_score(sampled_labels, sampled_probabilities)))
+        values["brier_score"].append(float(brier_score_loss(sampled_labels, sampled_probabilities)))
+    return _percentile_intervals(values)
+
+
+def clustered_regression_bootstrap_intervals(
+    targets: np.ndarray,
+    predictions: np.ndarray,
+    account_ids: np.ndarray,
+    *,
+    samples: int = 1_000,
+    seed: int = 23,
+) -> dict[str, tuple[float, float]]:
+    """Bootstrap MAE, RMSE, and R-squared by account cluster."""
+    targets = np.asarray(targets, dtype=np.float64).reshape(-1)
+    predictions = np.asarray(predictions, dtype=np.float64).reshape(-1)
+    if targets.shape != predictions.shape or targets.size == 0:
+        raise ValueError("targets and predictions must be non-empty, matching vectors")
+    indices_by_account = _cluster_indices(account_ids, targets.size)
+    values: dict[str, list[float]] = {"mae": [], "rmse": [], "r2": []}
+    for indices in _iter_cluster_bootstrap_indices(indices_by_account, samples=samples, seed=seed):
+        metrics = regression_metrics(targets[indices], predictions[indices])
+        for name in values:
+            values[name].append(float(metrics[name]))
+    return _percentile_intervals(values)
+
+
 def fit_ridge_regression_benchmark(
     train_features: pd.DataFrame,
     train_targets: np.ndarray,
@@ -308,6 +361,36 @@ def _as_probabilities(probabilities: np.ndarray) -> np.ndarray:
     if not np.isfinite(array).all() or (array < 0.0).any() or (array > 1.0).any():
         raise ValueError("probabilities must be finite values in [0, 1]")
     return array
+
+
+def _cluster_indices(account_ids: np.ndarray, expected_size: int) -> tuple[np.ndarray, ...]:
+    accounts = np.asarray(account_ids).reshape(-1)
+    if accounts.size != expected_size or accounts.size == 0:
+        raise ValueError("account_ids must be a non-empty vector aligned with predictions")
+    unique_accounts, inverse = np.unique(accounts, return_inverse=True)
+    if unique_accounts.size == 0:
+        raise ValueError("at least one account is required")
+    return tuple(np.flatnonzero(inverse == index) for index in range(unique_accounts.size))
+
+
+def _iter_cluster_bootstrap_indices(
+    clusters: tuple[np.ndarray, ...], *, samples: int, seed: int
+) -> Iterable[np.ndarray]:
+    if samples < 1:
+        raise ValueError("samples must be positive")
+    rng = np.random.default_rng(seed)
+    for _ in range(samples):
+        selected_clusters = rng.integers(0, len(clusters), size=len(clusters))
+        yield np.concatenate([clusters[index] for index in selected_clusters])
+
+
+def _percentile_intervals(values: dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+    return {
+        name: (float(np.quantile(scores, 0.025)), float(np.quantile(scores, 0.975)))
+        if scores
+        else (float("nan"), float("nan"))
+        for name, scores in values.items()
+    }
 
 
 def _probabilities_to_logits(probabilities: np.ndarray) -> np.ndarray:

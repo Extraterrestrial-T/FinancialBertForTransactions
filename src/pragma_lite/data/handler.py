@@ -12,13 +12,13 @@ import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
-from .data_models import (
+from .models import (
     AccountSample,
     build_account_sample,
     build_event_temporal_features,
     transaction_from_rows,
 )
-from .lifelong_adapter import build_account_states, read_lifelong_source_tables
+from .lifelong import build_account_states_from_processed
 from .lifelong_tokenizer import LifelongEventTokenizer
 from .profile_tokenizer import ProfileTokenizer
 from .tokenizer import EventTokenizer
@@ -36,11 +36,11 @@ class TokenizerBundle:
 def fit_tokenizer_bundle(
     train_events: pd.DataFrame,
     train_profiles: pd.DataFrame,
-    source_directory: str | Path,
+    lifelong_events_path: str | Path,
 ) -> TokenizerBundle:
-    """Fit all tokenizer numeric boundaries from training-split data only."""
-    tables = read_lifelong_source_tables(source_directory)
-    account_states = build_account_states(train_profiles, tables)
+    """Fit all tokenizer boundaries from train data and processed milestones."""
+    lifelong_events = pd.read_parquet(lifelong_events_path)
+    account_states = build_account_states_from_processed(train_profiles, lifelong_events)
     event_tokenizer = EventTokenizer().fit_numeric_fields(
         {
             "amount_abs": train_events["amount"].to_numpy(),
@@ -96,7 +96,7 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         self,
         events_path: str | Path,
         profiles_path: str | Path,
-        source_directory: str | Path,
+        lifelong_events_path: str | Path,
         tokenizers: TokenizerBundle,
         *,
         max_events: int = 64,
@@ -115,10 +115,11 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         ):
             raise ValueError("all tokenizers must be fitted or loaded before Dataset creation")
 
-        self.events = pd.read_parquet(events_path).sort_values(
+        requested_account_ids = _task_table_account_ids(task_table)
+        self.events = _read_parquet_for_accounts(events_path, requested_account_ids).sort_values(
             ["account_id", "trans_date", "trans_id"]
         )
-        self.profiles = pd.read_parquet(profiles_path)
+        self.profiles = _read_parquet_for_accounts(profiles_path, requested_account_ids)
         self.tokenizers = tokenizers
         self.max_events = max_events
         self.random_cutoff = random_cutoff
@@ -147,8 +148,8 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         if task_table is not None and random_cutoff:
             raise ValueError("task_table requires random_cutoff=False")
 
-        tables = read_lifelong_source_tables(source_directory)
-        self.account_states = build_account_states(self.profiles, tables)
+        lifelong_events = _read_parquet_for_accounts(lifelong_events_path, requested_account_ids)
+        self.account_states = build_account_states_from_processed(self.profiles, lifelong_events)
         self.profile_by_account = {
             int(row["account_id"]): row
             for row in self.profiles.to_dict(orient="records")
@@ -303,9 +304,26 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         )
 
 
-# Preserve the original name while the project transitions to standard Python
-# class naming.
-finBERTliteCzechDataset = FinBERTLiteCzechDataset
+def _task_table_account_ids(task_table: pd.DataFrame | None) -> tuple[int, ...] | None:
+    """Return the minimal account set needed for a fixed downstream table.
+
+    Pre-training needs the whole split, but downstream tables name their exact
+    account/cutoff rows.  Passing this filter to Parquet avoids materialising
+    unrelated transaction histories when only a task subset is evaluated.
+    """
+    if task_table is None:
+        return None
+    if "account_id" not in task_table:
+        raise ValueError("task_table is missing required columns: ['account_id']")
+    return tuple(sorted(task_table["account_id"].astype(int).unique()))
+
+
+def _read_parquet_for_accounts(path: str | Path, account_ids: tuple[int, ...] | None) -> pd.DataFrame:
+    if account_ids is None:
+        return pd.read_parquet(path)
+    if not account_ids:
+        return pd.read_parquet(path).iloc[0:0].copy()
+    return pd.read_parquet(path, filters=[("account_id", "in", list(account_ids))])
 
 
 def collate_account_records(

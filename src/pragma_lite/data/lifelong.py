@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .data_models import AccountState, LifelongEvent, StaticProfile
+from .models import AccountState, LifelongEvent, StaticProfile
 from .profile_tokenizer import ProfileTokenizer
 
 
@@ -20,6 +20,26 @@ class LifelongSourceTables:
     dispositions: pd.DataFrame
     cards: pd.DataFrame
     loans: pd.DataFrame
+
+
+LIFELONG_EVENT_COLUMNS = (
+    "account_id",
+    "occurred_at",
+    "event_type",
+    "card_type",
+    "loan_amount",
+    "loan_duration_months",
+    "loan_payment",
+)
+LOAN_OUTCOME_COLUMNS = (
+    "loan_id",
+    "account_id",
+    "granted_date",
+    "loan_amount",
+    "loan_duration_months",
+    "loan_payment",
+    "loan_status",
+)
 
 
 def read_lifelong_source_tables(source_directory: str | Path) -> LifelongSourceTables:
@@ -183,6 +203,96 @@ def build_account_states(
             lifelong_events=lifelong_events[account_id],
         )
 
+    return account_states
+
+
+def materialize_lifelong_events(tables: LifelongSourceTables) -> pd.DataFrame:
+    """Flatten non-leaking account milestones into a portable Parquet table.
+
+    The output intentionally excludes ``loan_status``.  It can therefore be
+    committed beside the processed event/profile splits and safely consumed by
+    pre-training or forward-looking tasks without the raw Teradata export.
+    """
+    rows: list[dict[str, object]] = []
+    for account_id, events in build_lifelong_events(tables).items():
+        for event in events:
+            rows.append(
+                {
+                    "account_id": account_id,
+                    "occurred_at": event.occurred_at,
+                    "event_type": event.event_type,
+                    "card_type": event.fields.get("card_type"),
+                    "loan_amount": event.fields.get("loan_amount"),
+                    "loan_duration_months": event.fields.get("loan_duration_months"),
+                    "loan_payment": event.fields.get("loan_payment"),
+                }
+            )
+    frame = pd.DataFrame(rows, columns=LIFELONG_EVENT_COLUMNS)
+    return frame.sort_values(["account_id", "occurred_at", "event_type"]).reset_index(drop=True)
+
+
+def materialize_loan_outcomes(tables: LifelongSourceTables) -> pd.DataFrame:
+    """Return target-only loan outcomes for the optional exploratory loan task."""
+    loans = tables.loans.rename(columns={"grant_date": "granted_date"}).copy()
+    if loans["account_id"].duplicated().any():
+        raise ValueError("this Czech-bank loan task expects at most one loan per account")
+    return loans.loc[:, LOAN_OUTCOME_COLUMNS].sort_values("account_id").reset_index(drop=True)
+
+
+def build_account_states_from_processed(
+    profile_rows: pd.DataFrame,
+    lifelong_events: pd.DataFrame,
+) -> dict[int, AccountState]:
+    """Materialize split-local account states without reading raw source files."""
+    if not profile_rows["account_id"].is_unique:
+        raise ValueError("profile_rows must contain exactly one row per account")
+    required = set(LIFELONG_EVENT_COLUMNS)
+    if missing := required.difference(lifelong_events.columns):
+        raise ValueError(f"lifelong events are missing columns: {sorted(missing)}")
+
+    event_rows = lifelong_events.copy()
+    event_rows["account_id"] = event_rows["account_id"].astype(int)
+    event_rows["occurred_at"] = pd.to_datetime(event_rows["occurred_at"])
+    events_by_account: dict[int, tuple[LifelongEvent, ...]] = {}
+    for account_id, group in event_rows.groupby("account_id", sort=False):
+        events: list[LifelongEvent] = []
+        for row in group.sort_values(["occurred_at", "event_type"]).to_dict(orient="records"):
+            fields: dict[str, object] = {}
+            if row["event_type"] == "card_issued" and pd.notna(row["card_type"]):
+                fields["card_type"] = str(row["card_type"])
+            if row["event_type"] == "loan_granted":
+                for name in ("loan_amount", "loan_duration_months", "loan_payment"):
+                    if pd.notna(row[name]):
+                        value = row[name]
+                        fields[name] = int(value) if name == "loan_duration_months" else float(value)
+            events.append(
+                LifelongEvent(
+                    account_id=int(account_id),
+                    occurred_at=_as_datetime(row["occurred_at"]),
+                    event_type=str(row["event_type"]),
+                    fields=fields,
+                )
+            )
+        events_by_account[int(account_id)] = tuple(events)
+
+    account_states: dict[int, AccountState] = {}
+    for profile_row in profile_rows.to_dict(orient="records"):
+        account_id = int(profile_row["account_id"])
+        created_at = _as_datetime(profile_row["create_date"])
+        events = events_by_account.get(account_id)
+        if not events:
+            raise ValueError(f"profile account {account_id} has no materialized lifelong events")
+        if events[0].event_type != "account_opened" or events[0].occurred_at != created_at:
+            raise ValueError(f"account creation date mismatch for account {account_id}")
+        account_states[account_id] = AccountState(
+            account_id=account_id,
+            static_profile=StaticProfile(
+                account_id=account_id,
+                known_from=created_at,
+                fields=ProfileTokenizer.static_fields_from_profile_row(profile_row),
+            ),
+            lifelong_events=events,
+        )
     return account_states
 
 

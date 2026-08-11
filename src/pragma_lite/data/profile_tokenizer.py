@@ -7,7 +7,7 @@ from datetime import date, datetime, time
 from math import log1p
 from typing import Any
 
-from .data_models import ProfileStateAtCutoff
+from .models import ProfileStateAtCutoff
 from .lifelong_tokenizer import LifelongEventTokenizer
 from .tokenizer import EventTokenizer
 

@@ -15,16 +15,16 @@ from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.datahandler import (  # noqa: E402
+from pragma_lite.data.handler import (  # noqa: E402
     FinBERTLiteCzechDataset,
     apply_value_mlm_mask,
     collate_account_records,
     fit_tokenizer_bundle,
 )
-from finBERTlitemodules.tokenizer import EventTokenizer  # noqa: E402
-from finBERTlitemodules.transformer_models import (  # noqa: E402
+from pragma_lite.data.tokenizer import EventTokenizer  # noqa: E402
+from pragma_lite.models.transformer import (  # noqa: E402
     EventMLMDemoModel,
     MultiHeadAttention,
     TransformerBlock,
@@ -34,7 +34,7 @@ from finBERTlitemodules.transformer_models import (  # noqa: E402
 
 EVENTS = ROOT / "data" / "processed" / "czech_bank" / "events_train.parquet"
 PROFILES = ROOT / "data" / "processed" / "czech_bank" / "profile_train.parquet"
-SOURCE_DIRECTORY = ROOT / "financial_db_Teradata"
+LIFELONG_EVENTS = ROOT / "data" / "processed" / "czech_bank" / "lifelong_events.parquet"
 
 
 class AttentionPrimitiveTest(unittest.TestCase):
@@ -131,8 +131,8 @@ class AttentionPrimitiveTest(unittest.TestCase):
 
 
 @unittest.skipUnless(
-    EVENTS.exists() and PROFILES.exists() and SOURCE_DIRECTORY.exists(),
-    "processed train data or Czech TSV sources are missing",
+    EVENTS.exists() and PROFILES.exists() and LIFELONG_EVENTS.exists(),
+    "processed train data or Czech milestones are missing",
 )
 class CzechBatchIntegrationTest(unittest.TestCase):
     @classmethod
@@ -140,7 +140,7 @@ class CzechBatchIntegrationTest(unittest.TestCase):
         cls.train_events = pd.read_parquet(EVENTS)
         cls.train_profiles = pd.read_parquet(PROFILES)
         cls.tokenizers = fit_tokenizer_bundle(
-            cls.train_events, cls.train_profiles, SOURCE_DIRECTORY
+            cls.train_events, cls.train_profiles, LIFELONG_EVENTS
         )
 
     def test_real_batch_reaches_finite_event_mlm_loss(self) -> None:
@@ -158,7 +158,7 @@ class CzechBatchIntegrationTest(unittest.TestCase):
             dataset = FinBERTLiteCzechDataset(
                 events_path,
                 profiles_path,
-                SOURCE_DIRECTORY,
+                LIFELONG_EVENTS,
                 self.tokenizers,
                 max_events=16,
                 random_cutoff=False,

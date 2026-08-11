@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .data_models import LifelongEvent
+from .models import LifelongEvent
 from .tokenizer import EncodedEvent, EventTokenizer
 
 

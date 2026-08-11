@@ -7,7 +7,7 @@ frozen-embedding transfer probe, not a deployable credit-scoring claim.
 
 Example in Colab after the MLM notebook has produced ``best.pt``::
 
-    python demos/run_loan_probe.py \
+    python scripts/run_loan_probe.py \
         --checkpoint /content/drive/MyDrive/FinancialBertForTransactions/checkpoints/pragma_lite_mlm/best.pt
 """
 
@@ -27,10 +27,11 @@ from torch.utils.data import DataLoader
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     EventMLMDemoModel,
     FinBERTLiteCzechDataset,
     TransformerConfig,
@@ -177,7 +178,8 @@ def main() -> None:
     model.load_state_dict(checkpoint["model_state_dict"])
 
     processed_directory = ROOT / "data" / "processed" / "czech_bank"
-    source_directory = ROOT / "financial_db_Teradata"
+    lifelong_events_path = processed_directory / "lifelong_events.parquet"
+    loan_outcomes_path = processed_directory / "loan_outcomes.parquet"
     split_manifest = pd.read_parquet(processed_directory / "account_split_manifest.parquet")
     events_by_split = {
         split: processed_directory / f"events_{split}.parquet"
@@ -187,7 +189,7 @@ def main() -> None:
         split: processed_directory / f"profile_{split}.parquet"
         for split in ("train", "valid", "test")
     }
-    for required_path in (*events_by_split.values(), *profiles_by_split.values(), source_directory):
+    for required_path in (*events_by_split.values(), *profiles_by_split.values(), lifelong_events_path, loan_outcomes_path):
         if not required_path.exists():
             raise FileNotFoundError(f"missing required Czech data: {required_path}")
 
@@ -196,7 +198,7 @@ def main() -> None:
     )
     task_table = build_loan_outcome_table(
         all_events,
-        read_loan_outcomes(source_directory),
+        read_loan_outcomes(loan_outcomes_path),
         split_manifest,
         min_pre_grant_transactions=args.min_pre_grant_transactions,
     )
@@ -211,7 +213,7 @@ def main() -> None:
         dataset = FinBERTLiteCzechDataset(
             events_by_split[split],
             profiles_by_split[split],
-            source_directory,
+            lifelong_events_path,
             tokenizers,
             max_events=max_events,
             random_cutoff=False,

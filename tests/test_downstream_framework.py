@@ -13,18 +13,18 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.downstream import (  # noqa: E402
+from pragma_lite.tasks.definitions import (  # noqa: E402
     build_cashflow_stress_table,
     build_future_value_table,
     fit_low_balance_threshold,
 )
-from finBERTlitemodules.downstream_features import (  # noqa: E402
+from pragma_lite.tasks.features import (  # noqa: E402
     build_account_history_features,
     fit_tabular_feature_schema,
 )
-from finBERTlitemodules.downstream_evaluation import (  # noqa: E402
+from pragma_lite.tasks.evaluation import (  # noqa: E402
     binary_classification_metrics,
     fit_binary_logistic_benchmark,
     fit_platt_probability_calibrator,

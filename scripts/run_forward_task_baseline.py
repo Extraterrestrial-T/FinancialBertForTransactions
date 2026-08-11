@@ -7,7 +7,7 @@ generate several dated snapshots per account while preserving account splits.
 
 Example::
 
-    python demos/run_forward_task_baseline.py --task cashflow_stress \
+    python scripts/run_forward_task_baseline.py --task cashflow_stress \
       --output /content/drive/MyDrive/FinancialBertForTransactions/checkpoints/pragma_lite_mlm/cashflow_tabular_baseline.json
 """
 
@@ -24,12 +24,15 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     binary_classification_metrics,
     bootstrap_roc_auc_interval,
+    clustered_binary_bootstrap_intervals,
+    clustered_regression_bootstrap_intervals,
     build_account_history_features,
     build_cashflow_stress_table,
     build_future_value_table,
@@ -51,9 +54,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cashflow-horizon-days", type=int, default=60)
     parser.add_argument("--low-balance-quantile", type=float, default=0.10)
     parser.add_argument("--value-horizon-days", type=int, default=180)
+    parser.add_argument("--bootstrap-samples", type=int, default=250)
     args = parser.parse_args()
-    if args.cutoff_stride_days < 1 or args.min_history_transactions < 1:
-        parser.error("cutoff-stride-days and min-history-transactions must be positive")
+    if args.cutoff_stride_days < 1 or args.min_history_transactions < 1 or args.bootstrap_samples < 1:
+        parser.error("cutoff-stride-days, min-history-transactions, and bootstrap-samples must be positive")
     return args
 
 
@@ -62,6 +66,13 @@ def _labels_aligned(task_rows: pd.DataFrame, features: pd.DataFrame, *, dtype: s
     if not features.index.isin(targets.index).all():
         raise ValueError("features and task labels are misaligned")
     return targets.loc[features.index].to_numpy(dtype=dtype)
+
+
+def _accounts_aligned(task_rows: pd.DataFrame, features: pd.DataFrame) -> np.ndarray:
+    accounts = task_rows.set_index("sample_id")["account_id"]
+    if not features.index.isin(accounts.index).all():
+        raise ValueError("features and account IDs are misaligned")
+    return accounts.loc[features.index].to_numpy(dtype="int64")
 
 
 def main() -> None:
@@ -115,6 +126,7 @@ def main() -> None:
 
     raw_features: dict[str, pd.DataFrame] = {}
     targets: dict[str, np.ndarray] = {}
+    account_ids: dict[str, np.ndarray] = {}
     for split in ("train", "valid", "test"):
         split_rows = task_table.loc[task_table["split"].eq(split)]
         raw_features[split] = build_account_history_features(
@@ -125,6 +137,7 @@ def main() -> None:
             raw_features[split],
             dtype="int64" if args.task == "cashflow_stress" else "float64",
         )
+        account_ids[split] = _accounts_aligned(split_rows, raw_features[split])
         summary = (
             f"{split}: n={len(raw_features[split])}, positive={int(targets[split].sum())}"
             if args.task == "cashflow_stress"
@@ -147,6 +160,7 @@ def main() -> None:
         },
         "feature_count": len(schema.feature_names),
         "sample_counts": {split: int(len(features[split])) for split in features},
+        "account_cluster_bootstrap_samples": args.bootstrap_samples,
     }
     if args.task == "cashflow_stress":
         prevalence_valid = prevalence_baseline_probabilities(targets["train"], len(targets["valid"]))
@@ -155,6 +169,10 @@ def main() -> None:
             features["train"], targets["train"], features["valid"], targets["valid"],
             features["test"], targets["test"],
         )
+        tabular_probabilities = {
+            split: benchmark.estimator.predict_proba(features[split])[:, 1]
+            for split in ("valid", "test")
+        }
         common_report.update(
             {
                 "low_balance_threshold": threshold,
@@ -165,8 +183,34 @@ def main() -> None:
                     "test_roc_auc_bootstrap_95_interval": bootstrap_roc_auc_interval(
                         targets["test"], prevalence_test
                     ),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["valid"], prevalence_valid, account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["test"], prevalence_test, account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
                 },
-                "tabular_logistic_baseline": benchmark.report(),
+                "tabular_logistic_baseline": {
+                    **benchmark.report(),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["valid"], tabular_probabilities["valid"], account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_binary_bootstrap_intervals(
+                            targets["test"], tabular_probabilities["test"], account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                },
             }
         )
     else:
@@ -175,6 +219,9 @@ def main() -> None:
             features["test"], targets["test"],
         )
         train_mean = float(targets["train"].mean())
+        tabular_predictions = {
+            split: benchmark.estimator.predict(features[split]) for split in ("valid", "test")
+        }
         common_report.update(
             {
                 "horizon_days": args.value_horizon_days,
@@ -187,8 +234,34 @@ def main() -> None:
                     "test_metrics": regression_metrics(
                         targets["test"], np.full(len(targets["test"]), train_mean)
                     ),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["valid"], np.full(len(targets["valid"]), train_mean), account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["test"], np.full(len(targets["test"]), train_mean), account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
                 },
-                "tabular_ridge_baseline": benchmark.report(),
+                "tabular_ridge_baseline": {
+                    **benchmark.report(),
+                    "validation_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["valid"], tabular_predictions["valid"], account_ids["valid"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                    "test_account_cluster_bootstrap_95_intervals": (
+                        clustered_regression_bootstrap_intervals(
+                            targets["test"], tabular_predictions["test"], account_ids["test"],
+                            samples=args.bootstrap_samples,
+                        )
+                    ),
+                },
             }
         )
 

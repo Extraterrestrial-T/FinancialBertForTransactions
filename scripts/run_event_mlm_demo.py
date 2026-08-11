@@ -1,7 +1,7 @@
 """Run a CPU-only synthetic forward/backward pass through the Event MLM model.
 
 From the repository root:
-    .\\FinBert\\Scripts\\python.exe demos\\run_event_mlm_demo.py
+    python scripts/run_event_mlm_demo.py
 """
 
 from __future__ import annotations
@@ -14,10 +14,11 @@ from torch.nn import functional as F
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     EventMLMDemoModel,
     EventTokenizer,
     TransformerConfig,

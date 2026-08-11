@@ -329,93 +329,84 @@ class EventEncoder(nn.Module):
             raise ValueError("event_mask must have shape [batch, events]")
 
 
-@dataclass 
+@dataclass(frozen=True, slots=True)
 class ProfileEncoderOutput:
-    user_embedding: Tensor #[Batch, d_model]
-    field_embeddings: Tensor#[Batch, Fields(P), d_model]
+    """Contextual user summary and profile-pair embeddings."""
+
+    user_embedding: Tensor  # [B, D]
+    field_embeddings: Tensor  # [B, P, D]
+
 
 class ProfileEncoder(nn.Module):
+    """Encode static fields and time-filtered life-long profile events."""
+
     def __init__(self, vocabulary_size: int, config: TransformerConfig, *, pad_id: int = 0) -> None:
         super().__init__()
-        #assertions
-        if vocabulary_size <=0:
+        if vocabulary_size <= 0:
             raise ValueError("vocabulary_size must be positive")
         if not 0 <= pad_id < vocabulary_size:
             raise ValueError("pad_id must be a valid vocabulary ID")
         self.vocabulary_size = vocabulary_size
         self.config = config
-        self.key_embeddings= nn.Embedding(vocabulary_size, config.d_model, padding_idx=pad_id)
+        self.key_embeddings = nn.Embedding(vocabulary_size, config.d_model, padding_idx=pad_id)
         self.value_embeddings = nn.Embedding(vocabulary_size, config.d_model, padding_idx=pad_id)
-        self.user_token = nn.Parameter(torch.empty(1, 1, config.d_model))# [1, 1, d_model]reuse across a single vector.
+        self.user_token = nn.Parameter(torch.empty(1, 1, config.d_model))
         nn.init.normal_(self.user_token, mean=0.0, std=0.02)
         self.embedding_dropout = nn.Dropout(config.dropout)
         self.blocks = nn.ModuleList(TransformerBlock(config) for _ in range(config.num_layers))
 
     def forward(
-                    self,
-                    profile_key_ids,
-                    profile_value_ids,
-                    profile_mask:Tensor,
-                    profile_rope_time: Tensor,
-                ) -> ProfileEncoderOutput:
-            """Return user embedding and contextual field vectors.
-            Args:
-                profile_key_ids: Field-key IDs shaped ``[B, P]``.
-                profile_value_ids: Field-value IDs shaped ``[B, P]``.
-                profile_mask: ``True`` for real fields, shaped ``[B, P]``.
-                profile_rope_time: elapsed-time coordinates shaped ``[B, P]``.
-                
-                """
-            
-            self._validate_inputs(profile_key_ids, profile_value_ids, profile_mask)
-            batch_size, field_count = profile_key_ids.shape
-            profile_mask = profile_mask.to(device=profile_key_ids.device, dtype=torch.bool)
-            if profile_rope_time.shape != profile_key_ids.shape:
-                raise ValueError("profile_rope_time must have shape [batch, fields]")
-            profile_rope_time = profile_rope_time.to(
-                device=profile_key_ids.device, dtype=torch.float32
-            )
+        self,
+        profile_key_ids: Tensor,
+        profile_value_ids: Tensor,
+        profile_mask: Tensor,
+        profile_rope_time: Tensor,
+    ) -> ProfileEncoderOutput:
+        """Return the learned ``[USR]`` vector and contextual profile fields.
 
-            field_vectors = self.key_embeddings(profile_key_ids) + self.value_embeddings(profile_value_ids)
-            field_vectors = self.embedding_dropout(field_vectors)
-            summary_vectors = self.user_token.expand(batch_size, 1, -1)
-            vectors = torch.cat((summary_vectors, field_vectors), dim=1)
-            token_mask = torch.cat((torch.ones((batch_size, 1), dtype=torch.bool, device=profile_key_ids.device), profile_mask), dim=1)
-            vectors = vectors * token_mask.unsqueeze(-1).to(dtype=vectors.dtype)
-            combined_profile_rope_time = torch.cat(
-                (
-                    torch.zeros(
-                        (batch_size, 1),
-                        dtype=profile_rope_time.dtype,
-                        device=profile_key_ids.device,
-                    ),
-                    profile_rope_time,
-                ),
-                dim=1,
-            )
+        Dated life-long events are already filtered to the sample cutoff by
+        the data handler. Their log-time coordinates let RoPE distinguish
+        recent milestones from account-opening information.
+        """
+        self._validate_inputs(profile_key_ids, profile_value_ids, profile_mask)
+        batch_size, _ = profile_key_ids.shape
+        profile_mask = profile_mask.to(device=profile_key_ids.device, dtype=torch.bool)
+        if profile_rope_time.shape != profile_key_ids.shape:
+            raise ValueError("profile_rope_time must have shape [batch, fields]")
+        profile_rope_time = profile_rope_time.to(device=profile_key_ids.device, dtype=torch.float32)
 
-            for block in self.blocks:
-                vectors = block(
-                    vectors,
-                    token_mask,
-                    rope_positions=combined_profile_rope_time,
-                )
+        field_vectors = self.key_embeddings(profile_key_ids) + self.value_embeddings(profile_value_ids)
+        field_vectors = self.embedding_dropout(field_vectors)
+        vectors = torch.cat((self.user_token.expand(batch_size, 1, -1), field_vectors), dim=1)
+        token_mask = torch.cat(
+            (
+                torch.ones((batch_size, 1), dtype=torch.bool, device=profile_key_ids.device),
+                profile_mask,
+            ),
+            dim=1,
+        )
+        positions = torch.cat(
+            (
+                torch.zeros((batch_size, 1), dtype=profile_rope_time.dtype, device=profile_key_ids.device),
+                profile_rope_time,
+            ),
+            dim=1,
+        )
+        vectors = vectors * token_mask.unsqueeze(-1).to(dtype=vectors.dtype)
+        for block in self.blocks:
+            vectors = block(vectors, attention_mask=token_mask, rope_positions=positions)
+        return ProfileEncoderOutput(user_embedding=vectors[:, 0], field_embeddings=vectors[:, 1:])
 
-            return ProfileEncoderOutput(
-                user_embedding=vectors[:, 0],#[B, d_model]
-                field_embeddings=vectors[:, 1:],#[B, Fields(P), d_model]
-            )
-    
     @staticmethod
     def _validate_inputs(
         profile_key_ids: Tensor, profile_value_ids: Tensor, profile_mask: Tensor
     ) -> None:
         if profile_key_ids.ndim != 2:
-            raise ValueError("user_key_ids must have shape [batch, fields]")
+            raise ValueError("profile_key_ids must have shape [batch, fields]")
         if profile_value_ids.shape != profile_key_ids.shape:
-            raise ValueError("user_value_ids must have the same shape as event_key_ids")
+            raise ValueError("profile_value_ids must have the same shape as profile_key_ids")
         if profile_mask.shape != profile_key_ids.shape[:2]:
-            raise ValueError("event_mask must have shape [batch, fields]")
+            raise ValueError("profile_mask must have shape [batch, fields]")
 
 @dataclass(frozen=True, slots=True)
 class HistoryEncoderOutput:
@@ -610,8 +601,8 @@ class EventMLMDemoModel(nn.Module):
 
 
 class TransformerModel(EventMLMDemoModel):
-    """Compatibility name for the initial EventMLMDemoModel implementation.
+    """Compatibility alias for the complete PRAGMA-lite MLM backbone.
 
-    It is intentionally *not* the final PRAGMA backbone.  Profile State and
-    History Encoder composition will be built separately on these primitives.
+    New code should use :class:`EventMLMDemoModel`, whose name is retained
+    from the project’s initial runnable attention demo.
     """

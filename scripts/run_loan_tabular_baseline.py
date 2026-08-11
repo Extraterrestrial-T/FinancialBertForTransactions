@@ -1,12 +1,12 @@
 """Run the leakage-safe tabular baseline for observed loan repayment trouble.
 
-This is the comparator for ``demos/run_loan_probe.py``.  It uses only
+This is the comparator for ``scripts/run_loan_probe.py``.  It uses only
 hand-built historical aggregates at the same pre-grant cutoff, and fits its
 feature schema and model choices on training data only.
 
 Example::
 
-    python demos/run_loan_tabular_baseline.py \
+    python scripts/run_loan_tabular_baseline.py \
       --output /content/drive/MyDrive/FinancialBertForTransactions/checkpoints/pragma_lite_mlm/loan_tabular_baseline_metrics.json \
       --frozen-probe-metrics /content/drive/MyDrive/FinancialBertForTransactions/checkpoints/pragma_lite_mlm/loan_probe_metrics.json
 """
@@ -24,10 +24,11 @@ import pandas as pd
 
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+SOURCE_ROOT = ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
 
-from finBERTlitemodules import (  # noqa: E402
+from pragma_lite import (  # noqa: E402
     binary_classification_metrics,
     bootstrap_roc_auc_interval,
     build_account_history_features,
@@ -61,7 +62,7 @@ def task_labels(task_rows: pd.DataFrame, features: pd.DataFrame) -> np.ndarray:
 def main() -> None:
     args = parse_args()
     processed_directory = ROOT / "data" / "processed" / "czech_bank"
-    source_directory = ROOT / "financial_db_Teradata"
+    loan_outcomes_path = processed_directory / "loan_outcomes.parquet"
     paths = {
         split: {
             "events": processed_directory / f"events_{split}.parquet",
@@ -69,7 +70,7 @@ def main() -> None:
         }
         for split in ("train", "valid", "test")
     }
-    required = [source_directory, processed_directory / "account_split_manifest.parquet"]
+    required = [loan_outcomes_path, processed_directory / "account_split_manifest.parquet"]
     required.extend(path for split_paths in paths.values() for path in split_paths.values())
     for path in required:
         if not path.exists():
@@ -80,7 +81,7 @@ def main() -> None:
     split_manifest = pd.read_parquet(processed_directory / "account_split_manifest.parquet")
     task_table = build_loan_outcome_table(
         pd.concat(events_by_split.values(), ignore_index=True),
-        read_loan_outcomes(source_directory),
+        read_loan_outcomes(loan_outcomes_path),
         split_manifest,
         min_pre_grant_transactions=args.min_pre_grant_transactions,
     )

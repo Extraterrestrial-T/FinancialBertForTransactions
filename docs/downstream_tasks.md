@@ -22,8 +22,8 @@ microsecond before loan grant, excluding grant-day transactions and the
 `loan_granted` profile milestone.
 
 ```bash
-python demos/run_loan_probe.py --checkpoint /path/to/best.pt
-python demos/run_loan_tabular_baseline.py \
+python scripts/run_loan_probe.py --checkpoint /path/to/best.pt
+python scripts/run_loan_tabular_baseline.py \
   --output /path/to/loan_tabular_baseline_metrics.json \
   --frozen-probe-metrics /path/to/loan_probe_metrics.json
 ```
@@ -42,9 +42,9 @@ complete future window. Excluding accounts already below the threshold keeps
 this a forecasting task rather than current-state detection.
 
 ```bash
-python demos/run_forward_task_baseline.py --task cashflow_stress \
+python scripts/run_forward_task_baseline.py --task cashflow_stress \
   --output /path/to/cashflow_tabular_baseline.json
-python demos/run_forward_embedding_probe.py --task cashflow_stress \
+python scripts/run_forward_embedding_probe.py --task cashflow_stress \
   --checkpoint /path/to/best.pt \
   --task-table /path/to/cashflow_stress_task_table.parquet \
   --output /path/to/cashflow_frozen_probe.json --device cuda
@@ -57,9 +57,9 @@ days. The task table uses the same cutoff safeguards and can be reused by the
 baseline and frozen embedding probe.
 
 ```bash
-python demos/run_forward_task_baseline.py --task future_value \
+python scripts/run_forward_task_baseline.py --task future_value \
   --output /path/to/future_value_tabular_baseline.json
-python demos/run_forward_embedding_probe.py --task future_value \
+python scripts/run_forward_embedding_probe.py --task future_value \
   --checkpoint /path/to/best.pt \
   --task-table /path/to/future_value_task_table.parquet \
   --output /path/to/future_value_frozen_probe.json --device cuda

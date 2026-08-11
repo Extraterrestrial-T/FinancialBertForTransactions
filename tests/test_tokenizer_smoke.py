@@ -18,10 +18,10 @@ ROOT = Path(__file__).resolve().parents[1]
 # Permit both ``python -m unittest ...`` from the repository root and direct
 # execution of this file from an IDE / notebook terminal.
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.tokenizer import EventTokenizer
-from finBERTlitemodules.profile_tokenizer import ProfileTokenizer
+from pragma_lite.data.tokenizer import EventTokenizer
+from pragma_lite.data.profile_tokenizer import ProfileTokenizer
 
 
 TRAIN_EVENTS = ROOT / "data" / "processed" / "czech_bank" / "events_train.parquet"

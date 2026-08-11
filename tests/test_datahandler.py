@@ -14,9 +14,9 @@ from torch.utils.data import DataLoader
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+    sys.path.insert(0, str(ROOT / "src"))
 
-from finBERTlitemodules.datahandler import (
+from pragma_lite.data.handler import (
     FinBERTLiteCzechDataset,
     apply_value_mlm_mask,
     collate_account_records,
@@ -28,12 +28,12 @@ from finBERTlitemodules.datahandler import (
 
 EVENTS = ROOT / "data" / "processed" / "czech_bank" / "events_train.parquet"
 PROFILES = ROOT / "data" / "processed" / "czech_bank" / "profile_train.parquet"
-SOURCE_DIRECTORY = ROOT / "financial_db_Teradata"
+LIFELONG_EVENTS = ROOT / "data" / "processed" / "czech_bank" / "lifelong_events.parquet"
 
 
 @unittest.skipUnless(
-    EVENTS.exists() and PROFILES.exists() and SOURCE_DIRECTORY.exists(),
-    "processed train data or Czech TSV sources are missing",
+    EVENTS.exists() and PROFILES.exists() and LIFELONG_EVENTS.exists(),
+    "processed train data or lifelong milestones are missing",
 )
 class DataHandlerIntegrationTest(unittest.TestCase):
     @classmethod
@@ -41,7 +41,7 @@ class DataHandlerIntegrationTest(unittest.TestCase):
         cls.train_events = pd.read_parquet(EVENTS)
         cls.train_profiles = pd.read_parquet(PROFILES)
         cls.tokenizers = fit_tokenizer_bundle(
-            cls.train_events, cls.train_profiles, SOURCE_DIRECTORY
+            cls.train_events, cls.train_profiles, LIFELONG_EVENTS
         )
 
     def test_dataset_batch_mask_and_saved_tokenizers(self) -> None:
@@ -66,7 +66,7 @@ class DataHandlerIntegrationTest(unittest.TestCase):
             dataset = FinBERTLiteCzechDataset(
                 events_path,
                 profiles_path,
-                SOURCE_DIRECTORY,
+                LIFELONG_EVENTS,
                 loaded,
                 max_events=64,
                 random_cutoff=False,
@@ -125,7 +125,7 @@ class DataHandlerIntegrationTest(unittest.TestCase):
             dataset = FinBERTLiteCzechDataset(
                 events_path,
                 profiles_path,
-                SOURCE_DIRECTORY,
+                LIFELONG_EVENTS,
                 self.tokenizers,
                 max_events=64,
                 random_cutoff=False,
