@@ -104,6 +104,7 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         seed: int = 17,
         fixed_cutoffs_by_account: Mapping[int, datetime] | None = None,
         targets_by_account: Mapping[int, int] | None = None,
+        task_table: pd.DataFrame | None = None,
     ) -> None:
         if max_events < 1:
             raise ValueError("max_events must be positive")
@@ -137,6 +138,14 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             raise ValueError("fixed_cutoffs_by_account requires random_cutoff=False")
         if self.targets_by_account is not None and self.fixed_cutoffs_by_account is None:
             raise ValueError("targets_by_account requires fixed_cutoffs_by_account")
+        if task_table is not None and (
+            self.fixed_cutoffs_by_account is not None or self.targets_by_account is not None
+        ):
+            raise ValueError(
+                "task_table is an alternative to fixed_cutoffs_by_account and targets_by_account"
+            )
+        if task_table is not None and random_cutoff:
+            raise ValueError("task_table requires random_cutoff=False")
 
         tables = read_lifelong_source_tables(source_directory)
         self.account_states = build_account_states(self.profiles, tables)
@@ -148,12 +157,18 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             int(account_id): transaction_from_rows(group)
             for account_id, group in self.events.groupby("account_id", sort=False)
         }
-        account_ids = set(self.account_states).intersection(self.transactions_by_account)
-        if self.fixed_cutoffs_by_account is not None:
-            account_ids.intersection_update(self.fixed_cutoffs_by_account)
-        if self.targets_by_account is not None:
-            account_ids.intersection_update(self.targets_by_account)
-        self.account_ids = tuple(sorted(account_ids))
+        available_account_ids = set(self.account_states).intersection(self.transactions_by_account)
+        self.task_rows: tuple[dict[str, Any], ...] | None = None
+        if task_table is not None:
+            self.task_rows = self._normalise_task_table(task_table, available_account_ids)
+            self.account_ids = tuple(int(row["account_id"]) for row in self.task_rows)
+        else:
+            account_ids = available_account_ids
+            if self.fixed_cutoffs_by_account is not None:
+                account_ids.intersection_update(self.fixed_cutoffs_by_account)
+            if self.targets_by_account is not None:
+                account_ids.intersection_update(self.targets_by_account)
+            self.account_ids = tuple(sorted(account_ids))
         if not self.account_ids:
             raise ValueError("no accounts have both profile data and transactions")
 
@@ -161,7 +176,7 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             account_id: tuple(
                 sorted({transaction.occurred_at for transaction in self.transactions_by_account[account_id]})
             )
-            for account_id in self.account_ids
+            for account_id in set(self.account_ids)
         }
 
     def set_epoch(self, epoch: int) -> None:
@@ -169,11 +184,14 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
         self.epoch = epoch
 
     def __len__(self) -> int:
-        return len(self.account_ids)
+        return len(self.task_rows) if self.task_rows is not None else len(self.account_ids)
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        account_id = self.account_ids[index]
-        cutoff_time = self._choose_cutoff(account_id, index)
+        task_row = self.task_rows[index] if self.task_rows is not None else None
+        account_id = int(task_row["account_id"]) if task_row is not None else self.account_ids[index]
+        cutoff_time = (
+            task_row["cutoff_time"] if task_row is not None else self._choose_cutoff(account_id, index)
+        )
         full_sample = build_account_sample(
             self.account_states[account_id],
             self.transactions_by_account[account_id],
@@ -193,6 +211,11 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
 
         return {
             "account_id": account_id,
+            "sample_id": (
+                task_row["sample_id"]
+                if task_row is not None
+                else f"account:{account_id}:cutoff:{cutoff_time.isoformat()}"
+            ),
             "cutoff_time": cutoff_time,
             "profile_key_ids": tokenized_profile.key_ids,
             "profile_value_ids": tokenized_profile.value_ids,
@@ -202,11 +225,62 @@ class FinBERTLiteCzechDataset(Dataset[dict[str, Any]]):
             "history_rope_time": temporal.history_rope_coordinates,
             "calendar_features": temporal.calendar_features,
             **(
-                {"target": self.targets_by_account[account_id]}
-                if self.targets_by_account is not None
-                else {}
+                {"target": task_row["target"]}
+                if task_row is not None and "target" in task_row
+                else (
+                    {"target": self.targets_by_account[account_id]}
+                    if self.targets_by_account is not None
+                    else {}
+                )
             ),
         }
+
+    @staticmethod
+    def _normalise_task_table(
+        task_table: pd.DataFrame,
+        available_account_ids: set[int],
+    ) -> tuple[dict[str, Any], ...]:
+        """Validate a labelled cutoff table, including repeated account samples.
+
+        ``task_table`` is the general downstream-task interface.  It needs an
+        ``account_id`` and ``cutoff_time`` for every row and may additionally
+        carry a numeric ``target`` and a stable ``sample_id``.  Repeating an
+        account at several cutoffs is intentional for future-window tasks.
+        """
+        required_columns = {"account_id", "cutoff_time"}
+        if missing := required_columns.difference(task_table.columns):
+            raise ValueError(f"task_table is missing required columns: {sorted(missing)}")
+        normalised = task_table.copy()
+        normalised["account_id"] = normalised["account_id"].astype(int)
+        normalised["cutoff_time"] = pd.to_datetime(normalised["cutoff_time"])
+        if normalised["cutoff_time"].isna().any():
+            raise ValueError("task_table cutoff_time values must be present")
+        if "target" in normalised and normalised["target"].isna().any():
+            raise ValueError("task_table target values must be present when supplied")
+        if "sample_id" not in normalised:
+            normalised["sample_id"] = [
+                f"account:{account_id}:cutoff:{cutoff.isoformat()}:row:{row_index}"
+                for row_index, (account_id, cutoff) in enumerate(
+                    zip(normalised["account_id"], normalised["cutoff_time"], strict=True)
+                )
+            ]
+        normalised["sample_id"] = normalised["sample_id"].astype(str)
+        if normalised["sample_id"].duplicated().any():
+            raise ValueError("task_table sample_id values must be unique")
+        missing_accounts = set(normalised["account_id"]).difference(available_account_ids)
+        if missing_accounts:
+            preview = sorted(missing_accounts)[:5]
+            raise ValueError(f"task_table contains unavailable account IDs, e.g. {preview}")
+
+        records = normalised.to_dict(orient="records")
+        for record in records:
+            cutoff = record["cutoff_time"]
+            record["cutoff_time"] = (
+                cutoff.to_pydatetime() if hasattr(cutoff, "to_pydatetime") else cutoff
+            )
+            if "target" in record and isinstance(record["target"], np.generic):
+                record["target"] = record["target"].item()
+        return tuple(records)
 
     def _choose_cutoff(self, account_id: int, index: int) -> datetime:
         if self.fixed_cutoffs_by_account is not None:
@@ -292,6 +366,7 @@ def collate_account_records(
 
     batch = {
         "account_ids": torch.tensor([record["account_id"] for record in records], dtype=torch.long),
+        "sample_ids": tuple(str(record["sample_id"]) for record in records),
         "cutoff_times": tuple(record["cutoff_time"] for record in records),
         "profile_key_ids": profile_key_ids,
         "profile_value_ids": profile_value_ids,
@@ -307,7 +382,13 @@ def collate_account_records(
     if any(has_targets) and not all(has_targets):
         raise ValueError("either every record must have a target or none may have one")
     if all(has_targets):
-        batch["targets"] = torch.tensor([record["target"] for record in records], dtype=torch.long)
+        targets = [record["target"] for record in records]
+        target_dtype = (
+            torch.float32
+            if any(isinstance(target, (float, np.floating)) for target in targets)
+            else torch.long
+        )
+        batch["targets"] = torch.tensor(targets, dtype=target_dtype)
     return batch
 
 

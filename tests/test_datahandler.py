@@ -97,6 +97,47 @@ class DataHandlerIntegrationTest(unittest.TestCase):
         self.assertTrue((masked["mlm_labels"].eq(-100) | masked["mlm_labels"].ge(0)).all())
         self.assertTrue(masked["mlm_mask"].any())
 
+    def test_task_table_supports_multiple_cutoffs_for_one_account(self) -> None:
+        account_id = int(self.train_profiles.iloc[0]["account_id"])
+        account_events = self.train_events.loc[
+            self.train_events["account_id"].eq(account_id)
+        ].sort_values(["trans_date", "trans_id"])
+        self.assertGreaterEqual(len(account_events), 2)
+        profiles = self.train_profiles.loc[self.train_profiles["account_id"].eq(account_id)]
+
+        with TemporaryDirectory() as temporary_directory:
+            temporary_directory = Path(temporary_directory)
+            events_path = temporary_directory / "events.parquet"
+            profiles_path = temporary_directory / "profiles.parquet"
+            account_events.to_parquet(events_path, index=False)
+            profiles.to_parquet(profiles_path, index=False)
+            task_table = pd.DataFrame(
+                {
+                    "sample_id": ["first", "latest"],
+                    "account_id": [account_id, account_id],
+                    "cutoff_time": [
+                        account_events.iloc[0]["trans_date"],
+                        account_events.iloc[-1]["trans_date"],
+                    ],
+                    "target": [0, 1],
+                }
+            )
+            dataset = FinBERTLiteCzechDataset(
+                events_path,
+                profiles_path,
+                SOURCE_DIRECTORY,
+                self.tokenizers,
+                max_events=64,
+                random_cutoff=False,
+                task_table=task_table,
+            )
+            batch = collate_account_records([dataset[0], dataset[1]])
+
+        self.assertEqual(len(dataset), 2)
+        self.assertEqual(batch["sample_ids"], ("first", "latest"))
+        self.assertEqual(batch["targets"].tolist(), [0, 1])
+        self.assertLessEqual(batch["event_mask"][0].sum(), batch["event_mask"][1].sum())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
