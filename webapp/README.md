@@ -54,6 +54,11 @@ root as the repository root; no persistent volume or environment variables are
 required. The function bundle explicitly includes the Flask templates, package
 source, compact model release, and processed Czech demo data.
 
+During the Vercel build, `scripts/prepare_vercel_static.py` copies the browser
+assets from `webapp/static/` into `public/static/`. Vercel serves those files
+from its CDN while the single Flask Function handles all application and API
+routes.
+
 Vercel Functions have ephemeral local storage, which is fine here: model
 artifacts and anonymous demo data are read-only bundled files, uploaded CSVs
 are parsed in memory, and Python's in-process caches are only optimisations.

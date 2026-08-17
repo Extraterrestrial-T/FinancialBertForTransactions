@@ -92,6 +92,7 @@ checkpoints/
 /FinBert/
 /artifacts/local/
 /app_assets/artifacts/local/
+/public/
 /adapters/
 /reports/
 *.pt
