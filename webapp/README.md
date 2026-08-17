@@ -46,14 +46,18 @@ it does not persist them. Custom categories not seen in Czech training map to
 the unknown token, so this is a generalisation inspection tool rather than an
 external validation claim.
 
-## Render
+## Vercel
 
-`render.yaml` is included. Push the repository to GitHub, create a new Render
-Blueprint from that repository, and let it use the included configuration.
-It explicitly selects Render's Free instance type for a portfolio demo. Free
-web services sleep after inactivity, so the first visitor after a quiet period
-can see a short cold start. The service deliberately uses one worker: each
-worker loads its own PyTorch model, so one keeps the compact model release and
-cached data from being duplicated in memory. The shipped artifact release is
-suitable for a public portfolio demo only because its records are anonymous
-research data.
+`vercel.json` and `api/index.py` deploy this same Flask application as one
+Python Function. Import the GitHub repository in Vercel and leave the project
+root as the repository root; no persistent volume or environment variables are
+required. The function bundle explicitly includes the Flask templates, package
+source, compact model release, and processed Czech demo data.
+
+Vercel Functions have ephemeral local storage, which is fine here: model
+artifacts and anonymous demo data are read-only bundled files, uploaded CSVs
+are parsed in memory, and Python's in-process caches are only optimisations.
+The initial request can be slower because it imports PyTorch and loads one
+adapter on demand. If a deployment fails at build time, inspect the reported
+uncompressed function size; Python functions have a bundle-size limit, so do
+not commit raw data, virtual environments, or unrelated checkpoints.

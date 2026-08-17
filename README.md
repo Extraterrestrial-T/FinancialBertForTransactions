@@ -130,7 +130,7 @@ a click-driven transaction and balance timeline rather than a notebook-style
 dashboard: choose one adapter, anonymous account and cutoff, run real
 inference, then inspect the model-visible events alongside the held-out
 outcome. It verifies the base-plus-adapter contract before each model is
-loaded. The included [Render Blueprint](render.yaml) can deploy the same
+loaded. The included [Vercel configuration](vercel.json) deploys the same
 application without moving this into a separate repository. Read [the web app
 guide](webapp/README.md) and [the model-release layout](app_assets/artifacts/README.md).
 
@@ -141,4 +141,3 @@ and no verified fraud labels. This repository makes no fraud-detection claim.
 All forward-looking evaluations use account-disjoint splits and cutoff-safe
 input histories, but the current MLM checkpoint was pretrained on full
 account histories rather than being re-pretrained per downstream horizon.
-
