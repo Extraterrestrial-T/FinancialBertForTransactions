@@ -4,5 +4,5 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -e ".[web]"
-    startCommand: gunicorn --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT webapp.server:app
+  startCommand: gunicorn --workers 1 --threads 1 --timeout 120 --bind 0.0.0.0:$PORT webapp.server:app
     healthCheckPath: /api/bootstrap

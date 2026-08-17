@@ -157,6 +157,8 @@ def load_demo_snapshot(
     task: DemoTask,
     account_id: int,
     cutoff_time: datetime,
+    *,
+    low_balance_threshold: float | None = None,
 ) -> DemoSnapshot:
     """Load one model history and hold back its observed future for the UI."""
     directory = Path(processed_dir)
@@ -177,7 +179,11 @@ def load_demo_snapshot(
         target: float | int = float(log1p(future["amount"].abs().sum()))
         threshold = None
     else:
-        threshold = _low_balance_threshold(directory)
+        threshold = (
+            float(low_balance_threshold)
+            if low_balance_threshold is not None
+            else _low_balance_threshold(directory)
+        )
         current_balance = float(history.iloc[-1]["balance"])
         if current_balance <= threshold:
             raise ValueError("selected cutoff is already below the stress threshold")

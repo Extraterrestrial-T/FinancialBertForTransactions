@@ -13,20 +13,26 @@ from functools import lru_cache
 from io import StringIO
 import json
 from math import isfinite
+import os
 from pathlib import Path
 from typing import Any, Literal
 
+# Render's smallest instance has half a CPU. Set these before importing
+# PyTorch so a single prediction does not create a larger thread pool than the
+# machine can productively run.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+
 import pandas as pd
+import torch
 from flask import Flask, jsonify, render_template, request
 
 from pragma_lite import (
     AccountTaskPredictor,
     DemoSnapshot,
-    load_demo_account_index,
     load_demo_snapshot,
     task_spec,
     transaction_bucket_label,
-    valid_demo_cutoffs,
 )
 from pragma_lite.artifacts import AdapterArtifact, discover_base_checkpoint, discover_task_adapters
 
@@ -35,8 +41,10 @@ ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS_DIR = ROOT / "app_assets" / "artifacts"
 PROCESSED_DIR = ROOT / "data" / "processed" / "czech_bank"
 RESULTS_PATH = ROOT / "app_assets" / "initial_results.json"
+LAB_INDEX_PATH = ARTIFACTS_DIR / "lab_index.json"
 DemoTask = Literal["cashflow_stress", "future_value"]
 
+torch.set_num_threads(1)
 app = Flask(__name__)
 app.config["JSON_SORT_KEYS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 5 * 1024 * 1024
@@ -66,6 +74,31 @@ def _adapters() -> tuple[AdapterArtifact, ...]:
     return discover_task_adapters(ARTIFACTS_DIR)
 
 
+@lru_cache(maxsize=1)
+def _lab_index() -> dict[str, Any]:
+    """Load the precomputed held-out account and cutoff index.
+
+    This deliberately replaces a runtime scan over every transaction. The
+    index is derived from the same cached task tables used for evaluation.
+    """
+    if not LAB_INDEX_PATH.exists():
+        raise RuntimeError("Could not find the compact inference-lab index.")
+    payload = json.loads(LAB_INDEX_PATH.read_text(encoding="utf-8"))
+    if payload.get("schema_version") != 1 or not isinstance(payload.get("tasks"), dict):
+        raise RuntimeError("The inference-lab index has an unsupported schema.")
+    return payload
+
+
+def _lab_task(task: DemoTask) -> dict[str, Any]:
+    try:
+        payload = _lab_index()["tasks"][task]
+    except KeyError as error:
+        raise RuntimeError(f"The inference-lab index has no {task!r} task.") from error
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"The inference-lab index has invalid {task!r} data.")
+    return payload
+
+
 @lru_cache(maxsize=2)
 def _predictor(adapter_identifier: str) -> AccountTaskPredictor:
     adapter = _adapter_by_identifier(adapter_identifier)
@@ -74,20 +107,32 @@ def _predictor(adapter_identifier: str) -> AccountTaskPredictor:
 
 @lru_cache(maxsize=2)
 def _account_index(task: DemoTask) -> tuple[dict[str, Any], ...]:
-    index = load_demo_account_index(PROCESSED_DIR, task)
+    accounts = _lab_task(task).get("accounts", [])
+    if not isinstance(accounts, list):
+        raise RuntimeError(f"The inference-lab index has invalid {task!r} accounts.")
     return tuple(
         {
-            "account_id": int(row.account_id),
-            "split": str(row.split),
-            "eligible_history_events": int(row.eligible_history_events),
+            "account_id": int(row["account_id"]),
+            "split": str(row["split"]),
+            "eligible_history_events": int(row["eligible_history_events"]),
         }
-        for row in index.loc[index["split"].eq("test")].itertuples(index=False)
+        for row in accounts
     )
 
 
 @lru_cache(maxsize=512)
 def _cutoffs(task: DemoTask, account_id: int) -> tuple[str, ...]:
-    return tuple(value.isoformat() for value in valid_demo_cutoffs(PROCESSED_DIR, task, account_id))
+    for account in _lab_task(task).get("accounts", []):
+        if int(account["account_id"]) == account_id:
+            return tuple(str(value) for value in account["cutoffs"])
+    return ()
+
+
+def _cashflow_threshold() -> float:
+    try:
+        return float(_lab_task("cashflow_stress")["low_balance_threshold"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise RuntimeError("The inference-lab index has no cash-flow threshold.") from error
 
 
 def _adapter_by_identifier(identifier: str) -> AdapterArtifact:
@@ -186,7 +231,13 @@ def prediction():
     cutoff = _parse_cutoff(request.args.get("cutoff"))
     if cutoff.isoformat() not in _cutoffs(adapter.task, account_id):
         raise ValueError("cutoff is not valid for this account and task")
-    snapshot = load_demo_snapshot(PROCESSED_DIR, adapter.task, account_id, cutoff)
+    snapshot = load_demo_snapshot(
+        PROCESSED_DIR,
+        adapter.task,
+        account_id,
+        cutoff,
+        low_balance_threshold=_cashflow_threshold() if adapter.task == "cashflow_stress" else None,
+    )
     predictor = _predictor(adapter.identifier)
     start = _parse_optional_day(request.args.get("start"))
     history = snapshot.history_events.copy()
