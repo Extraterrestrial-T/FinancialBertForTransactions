@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from hashlib import sha256
 from pathlib import Path
 import tempfile
 import unittest
@@ -120,6 +121,7 @@ class HistoryLoRATests(unittest.TestCase):
                 {
                     "format_version": 1,
                     "task": "future_value",
+                    "base_checkpoint_sha256": sha256(base_checkpoint.read_bytes()).hexdigest(),
                     "lora_config": {"rank": 4, "alpha": 8.0, "dropout": 0.0},
                     "trainable_parameter_count": state.trainable_parameter_count,
                     "adapter_state_dict": adapter_state_dict(model),

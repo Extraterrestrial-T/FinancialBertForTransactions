@@ -25,7 +25,19 @@ and tabular features win, so it is not a responsible fine-tuning target.
 Cash-flow stress demonstrates that a frozen representation can come close to
 engineered account features. The future 180-day absolute transaction-volume
 proxy is the more persuasive next step because the frozen embedding has a
-small edge over the Ridge baseline. The next experiments use a rank-selected,
-History Encoder-only LoRA adapter and compare it with both prior baselines on
-the same cached, account-disjoint task table. This is still exploratory
-representation learning—not real LTV, credit scoring, or fraud detection.
+small edge over the Ridge baseline, and a rank-selected History Encoder-only
+LoRA adapter substantially improves it further. Its target is
+`log1p(sum(abs(amount)))`, or `ln(1 + future volume)`: this makes zero volume
+well-defined and prevents a small number of unusually active accounts from
+dominating the loss. Its reported MAE is therefore a log-volume error, not a
+currency error, and the task remains a proxy for future account activity—not
+literal LTV. All comparisons use the same cached, account-disjoint task table.
+This is still exploratory representation learning—not real LTV, credit
+scoring, or fraud detection.
+
+The first adapter results make the story concrete. History-only LoRA lifts
+cash-flow-stress test average precision from 0.480 for engineered tabular
+features to 0.614, while the rank-4 future-value adapter lowers test MAE from
+0.275 for tabular Ridge to 0.223. Those figures are presented with
+account-clustered uncertainty intervals in [the results note](results.md),
+alongside the caveats that keep the project’s claims proportionate.

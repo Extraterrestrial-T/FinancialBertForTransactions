@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="PRAGMA-lite architecture."><title>PRAGMA-lite | Architecture</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+  <body class="research-page">
+    <header class="research-header"><a class="research-brand" href="/"><span class="brand-mark">P.</span>PRAGMA-lite</a><nav aria-label="Site navigation"><a href="/">Home</a><a class="active" href="/architecture">Architecture</a><a href="/methodology">Method</a><a href="/results">Results</a><a href="/lab">Inference</a></nav><a class="nav-action" href="/upload">Upload CSV</a></header>
+    <main class="research-shell article-page">
+      <div class="page-intro"><p class="page-label">Architecture</p><h1>Three encoders, one account embedding</h1><p>The original <a href="https://arxiv.org/html/2604.08649v1" target="_blank" rel="noreferrer">PRAGMA paper</a> uses a Profile State Encoder, an Event Encoder and a History Encoder. I kept that shape. The difference is scale and data scope: this model is a 1.59M-parameter version trained on one public banking dataset.</p></div>
+      <section class="mermaid-panel" aria-label="PRAGMA-lite architecture diagram"><pre class="mermaid">
+flowchart LR
+  A["Account history\ntransactions through a cutoff"] --> B["Event tokenizer\nkey + value + time"]
+  P["Profile state\nstatic fields + life-long events"] --> Q["Profile tokenizer\nkey + value + time"]
+  B --> C["Event Encoder\n3 Transformer blocks\n[EVT] per transaction"]
+  Q --> D["Profile Encoder\n3 Transformer blocks\n[USR] summary"]
+  C --> E["Calendar projection\nday-of-week + day-of-month"]
+  D --> F["History Encoder\n3 Transformer blocks + RoPE"]
+  E --> F
+  F --> G["Account embedding"]
+  G --> H["MLM head during pretraining"]
+  G --> I["LoRA adapter + task head"]
+      </pre></section>
+      <section class="article-grid">
+        <article><p class="section-number">01</p><h2>Structured tokens</h2><p>A transaction is not converted into a sentence. Every field is kept as a pair: a key identifies the meaning, such as <code>operation</code>, and a value identifies the observed category. Amount and balance become train-fitted quantile buckets. This lets the model distinguish the number's range without inventing text tokens for digits.</p></article>
+        <article><p class="section-number">02</p><h2>Event and profile branches</h2><p>The Event Encoder sees one transaction at a time and returns its learned <code>[EVT]</code> summary. The Profile Encoder processes static state and dated milestones, returning <code>[USR]</code>. Those pieces should not be treated as the same kind of timestamped data, which is why the profile branch carries its own time coordinates for life-long events.</p></article>
+        <article><p class="section-number">03</p><h2>History reasoning</h2><p>The History Encoder receives the profile summary followed by event summaries. It is where transactions attend to each other across time. RoPE uses the paper's transformed gap-to-last-event coordinate, while calendar features are added to event summaries before this stage.</p></article>
+        <article><p class="section-number">04</p><h2>The compact configuration</h2><dl class="spec-list"><div><dt>Parameters</dt><dd>1,589,585</dd></div><div><dt>Width</dt><dd>144</dd></div><div><dt>Heads</dt><dd>8</dd></div><div><dt>Blocks</dt><dd>3 per encoder</dd></div><div><dt>FFN width</dt><dd>288</dd></div><div><dt>Maximum events</dt><dd>256</dd></div></dl></article>
+      </section>
+    </main>
+    <footer class="research-footer research-shell">Architecture follows the PRAGMA paper's design pattern, implemented independently in PyTorch.</footer>
+    <script type="module">import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs'; mermaid.initialize({startOnLoad:true,theme:'dark'});</script>
+  </body>
+</html>

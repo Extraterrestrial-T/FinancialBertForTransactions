@@ -53,8 +53,13 @@ python scripts/run_forward_embedding_probe.py --task cashflow_stress \
 ## Future-value proxy
 
 This is not literal LTV. Target: `log1p(sum(abs(amount)))` during the next 180
-days. The task table uses the same cutoff safeguards and can be reused by the
-baseline and frozen embedding probe.
+days, where `log1p(x) = ln(1 + x)`. The `+1` makes a zero-volume account map
+cleanly to zero, while the logarithm compresses the few extremely high-volume
+accounts so they do not dominate the regression loss. Predictions can be
+approximately returned to raw volume with `expm1(prediction)`. Consequently,
+MAE and RMSE are reported in log-volume units, not currency units. The task
+table uses the same cutoff safeguards and can be reused by the baseline and
+frozen embedding probe.
 
 ```bash
 python scripts/run_forward_task_baseline.py --task future_value \

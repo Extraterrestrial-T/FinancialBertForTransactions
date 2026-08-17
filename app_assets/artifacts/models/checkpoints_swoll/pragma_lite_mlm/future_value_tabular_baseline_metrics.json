@@ -1,0 +1,57 @@
+{
+  "task": "future_value",
+  "task_definition": {
+    "cutoff_stride_days": 180,
+    "min_history_transactions": 20,
+    "observation_end": "2018-12-31",
+    "account_disjoint_splits": true,
+    "full_future_windows_only": true,
+    "feature_schema_fit_on_train_only": true,
+    "task_table_path": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/future_value_task_table.parquet"
+  },
+  "feature_count": 42,
+  "sample_counts": {
+    "train": 16790,
+    "valid": 3680,
+    "test": 3561
+  },
+  "horizon_days": 180,
+  "target": "log1p(sum(abs(amount)) in future window)",
+  "mean_target_baseline": {
+    "train_target_mean": 9.586319927277374,
+    "validation_metrics": {
+      "mae": 0.7388885796550893,
+      "rmse": 0.8733113856986368,
+      "r2": -1.0549133187209847e-05,
+      "n_examples": 3680
+    },
+    "test_metrics": {
+      "mae": 0.7867805474170421,
+      "rmse": 0.9370277861902169,
+      "r2": -0.001077084089537994,
+      "n_examples": 3561
+    }
+  },
+  "tabular_ridge_baseline": {
+    "selected_ridge_alpha": 100.0,
+    "validation_mae_by_alpha": {
+      "0.01": 0.2535558981526153,
+      "0.1": 0.2534735441301854,
+      "1.0": 0.25345033377261594,
+      "10.0": 0.25335628085454404,
+      "100.0": 0.25277483107141346
+    },
+    "validation_metrics": {
+      "mae": 0.25277483107141346,
+      "rmse": 0.37799373397839575,
+      "r2": 0.8126578336053292,
+      "n_examples": 3680
+    },
+    "test_metrics": {
+      "mae": 0.27471542479414324,
+      "rmse": 0.44336472668427973,
+      "r2": 0.7758778097716851,
+      "n_examples": 3561
+    }
+  }
+}

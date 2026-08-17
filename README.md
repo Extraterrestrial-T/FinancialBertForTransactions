@@ -1,6 +1,6 @@
 # PRAGMA-lite
 
-A compact, portfolio-ready experiment in learning account representations from
+A compact experiment in learning account representations from
 structured banking histories. It mirrors the useful ideas in
 [PRAGMA](https://arxiv.org/html/2604.08649v1) at a deliberately smaller
 scale: field-pair tokenisation, event/profile/history encoders, time-aware
@@ -29,7 +29,11 @@ engineered tabular features outperform the frozen representation. Cash-flow
 stress shows that frozen embeddings are competitive with engineered features.
 The 180-day future transaction-volume proxy is the primary adaptation task:
 the frozen representation slightly exceeded the tabular Ridge baseline in the
-initial held-out experiment. It is a volume proxy, not true customer LTV.
+initial held-out experiment, and History Encoder LoRA improves it further. The
+target is ``log1p(sum(abs(amount)))`` in the next 180 days: ``log1p(x)`` is
+``ln(1 + x)``, which safely handles zero volume and compresses extreme account
+activity. It is a volume proxy, not true customer LTV; its MAE is on the
+log-volume scale, not in currency units.
 
 ## Repository map
 
@@ -58,6 +62,13 @@ python -m pip install -e ".[notebooks,test]"
 python -m unittest discover -s tests -v
 ```
 
+To run the interactive explorer, add its small web extra:
+
+```powershell
+python -m pip install -e ".[web]"
+python -m flask --app webapp.server run --debug
+```
+
 The processed artifacts let you run tests, data inspection, frozen evaluation,
 and smoke training without the raw source archive. To recreate the processed
 files from a local Teradata export, see [the data card](docs/data.md).
@@ -73,7 +84,7 @@ ends: checkpoints, cached task tables, reports, and LoRA adapters.
 
 ```python
 %cd /content
-!git clone https://github.com/<your-user>/FinancialBertForTransactions.git
+!git clone https://github.com/Extraterrestrial-T/FinancialBertForTransactions.git
 %cd /content/FinancialBertForTransactions
 !pip -q install -e ".[notebooks]"
 
@@ -108,6 +119,20 @@ details and call into `pragma_lite` or `scripts/` instead.
 Read [the architecture note](docs/architecture.md),
 [the downstream protocol](docs/downstream_tasks.md), and
 [the experiment story](docs/experiment_story.md) before presenting results.
+The compact, recruiter-facing numbers and their boundaries live in
+[the results note](docs/results.md). For exact base-checkpoint plus LoRA
+adapter loading, see [the inference contract](docs/inference.md).
+
+## Interactive explorer
+
+An web app  explorer lives in [`webapp/`](webapp/). It has
+a click-driven transaction and balance timeline rather than a notebook-style
+dashboard: choose one adapter, anonymous account and cutoff, run real
+inference, then inspect the model-visible events alongside the held-out
+outcome. It verifies the base-plus-adapter contract before each model is
+loaded. The included [Render Blueprint](render.yaml) can deploy the same
+application without moving this into a separate repository. Read [the web app
+guide](webapp/README.md) and [the model-release layout](app_assets/artifacts/README.md).
 
 ## Scope and caveats
 
@@ -116,5 +141,4 @@ and no verified fraud labels. This repository makes no fraud-detection claim.
 All forward-looking evaluations use account-disjoint splits and cutoff-safe
 input histories, but the current MLM checkpoint was pretrained on full
 account histories rather than being re-pretrained per downstream horizon.
-Treat the figures as exploratory representation-learning evidence, not a
-prospective financial-risk estimate.
+

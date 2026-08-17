@@ -205,6 +205,15 @@ def load_lora_task_model(
     payload = torch.load(adapter_checkpoint_path, map_location=resolved_device)
     if payload.get("format_version") != 1:
         raise ValueError("unsupported LoRA adapter checkpoint format")
+    expected_base_sha256 = payload.get("base_checkpoint_sha256")
+    if not expected_base_sha256:
+        raise ValueError("LoRA adapter is missing its base checkpoint SHA-256")
+    actual_base_sha256 = _file_sha256(Path(base_checkpoint_path).resolve())
+    if actual_base_sha256 != expected_base_sha256:
+        raise ValueError(
+            "LoRA adapter belongs to a different base checkpoint; load the base model "
+            "whose SHA-256 is recorded in the adapter metadata"
+        )
     backbone, _ = _load_backbone(base_checkpoint_path, device=resolved_device)
     lora_state = inject_history_lora(backbone, LoRAConfig(**payload["lora_config"]))
     model = AccountTaskModel(backbone, payload["task"]).to(resolved_device)

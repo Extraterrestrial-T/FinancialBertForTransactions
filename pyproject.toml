@@ -24,6 +24,10 @@ notebooks = [
     "matplotlib>=3.8",
 ]
 test = ["pytest>=8.0"]
+web = [
+    "flask>=3.0",
+    "gunicorn>=22.0",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

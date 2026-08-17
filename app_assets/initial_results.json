@@ -1,0 +1,76 @@
+{
+  "title": "Initial downstream results",
+  "protocol": "Account-disjoint Czech-bank snapshots. The test set was evaluated once after validation-only model selection. Confidence intervals use 250 account-clustered bootstrap resamples.",
+  "cashflow_stress": {
+    "task_label": "Will an account above the train-fitted low-balance threshold cross it within the next 60 days?",
+    "positive_rate": 0.1719,
+    "test_examples": 3531,
+    "test_positives": 607,
+    "models": [
+      {
+        "name": "Tabular logistic baseline",
+        "roc_auc": 0.8182,
+        "average_precision": 0.4796,
+        "brier_score": 0.1136,
+        "balanced_accuracy": 0.5441
+      },
+      {
+        "name": "Frozen Transformer + logistic head",
+        "roc_auc": 0.8054,
+        "average_precision": 0.4619,
+        "brier_score": 0.1166,
+        "balanced_accuracy": 0.5940
+      },
+      {
+        "name": "History Encoder LoRA",
+        "roc_auc": 0.8638,
+        "average_precision": 0.6140,
+        "brier_score": 0.1019,
+        "balanced_accuracy": 0.7202,
+        "average_precision_interval": [0.5690, 0.6569],
+        "selected_rank": 16,
+        "trainable_fraction": 0.0522
+      }
+    ],
+    "interpretation": "LoRA improved average precision by 0.134 over the tabular baseline and 0.152 over frozen embeddings. Its account-clustered AP interval remains above both frozen and tabular point estimates."
+  },
+  "future_value": {
+    "task_label": "Predict log1p of absolute transaction volume during the next 180 days.",
+    "target_note": "This is a future transaction-volume proxy, not literal customer lifetime value. MAE is in log-volume units, not currency units.",
+    "test_examples": 3561,
+    "models": [
+      {
+        "name": "Mean target baseline",
+        "mae": 0.7868,
+        "rmse": 0.9370,
+        "r2": -0.0011
+      },
+      {
+        "name": "Tabular Ridge baseline",
+        "mae": 0.2747,
+        "rmse": 0.4434,
+        "r2": 0.7759
+      },
+      {
+        "name": "Frozen Transformer + Ridge head",
+        "mae": 0.2611,
+        "rmse": 0.4396,
+        "r2": 0.7796
+      },
+      {
+        "name": "History Encoder LoRA",
+        "mae": 0.2229,
+        "rmse": 0.4075,
+        "r2": 0.8106,
+        "mae_interval": [0.2055, 0.2395],
+        "selected_rank": 4,
+        "trainable_fraction": 0.0130
+      }
+    ],
+    "interpretation": "The selected rank-4 adapter reduces MAE by 19% versus tabular Ridge and 15% versus frozen embeddings. The test MAE interval is clearly below the tabular baseline interval."
+  },
+  "loan_trouble": {
+    "status": "Exploratory diagnostic only",
+    "interpretation": "The held-out set had eight positive examples and engineered tabular features won. It is not used as a LoRA fine-tuning claim."
+  }
+}

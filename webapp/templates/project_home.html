@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="PRAGMA-lite, a compact Transformer for structured financial transactions.">
+    <title>PRAGMA-lite</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  </head>
+  <body class="research-page home-screen">
+    <header class="research-header">
+      <a class="research-brand" href="/"><span class="brand-mark">P.</span>PRAGMA-lite</a>
+      <nav aria-label="Site navigation"><a class="active" href="/">Home</a><a href="/architecture">Architecture</a><a href="/methodology">Method</a><a href="/results">Results</a><a href="/lab">Inference</a></nav>
+      <a class="nav-action" href="/upload">Upload CSV</a>
+    </header>
+    <main>
+      <section class="home-hero research-shell">
+        <p class="page-label">A compact reproduction of a banking Transformer</p>
+        <h1>PRAGMA-lite</h1>
+        <p class="home-subtitle">I used the architecture described in Revolut's PRAGMA paper as a blueprint, then rebuilt a small version in PyTorch around the Czech financial dataset.</p>
+        <div class="home-links"><a href="/architecture">Read the architecture <span>→</span></a><a href="/lab">Run inference on a held-out account <span>→</span></a><a href="/upload">Try a CSV window <span>→</span></a></div>
+      </section>
+      <section class="home-grid research-shell" aria-label="Project index">
+        <a class="home-card wide" href="/architecture"><span>01</span><h2>Architecture</h2><p>Key, value and time tokenisation feeding event, profile and history encoders.</p></a>
+        <a class="home-card" href="/methodology"><span>02</span><h2>Method</h2><p>Masked-event pretraining, sequence sampling, LoRA and the actual learning curve.</p></a>
+        <a class="home-card" href="/results"><span>03</span><h2>Results</h2><p>Frozen probes, adapted models and task-specific comparisons.</p></a>
+        <a class="home-card wide dark-card" href="/lab"><span>04</span><h2>Inference lab</h2><p>Choose a held-out account, cutoff and input window. Inspect which events reached the model.</p></a>
+        <a class="home-card wide" href="/methodology#use-it"><span>05</span><h2>Use the code yourself</h2><p>Install the Python package, reproduce the notebooks in VS Code, or run GPU experiments through a connected Colab runtime.</p></a>
+      </section>
+    </main>
+    <footer class="research-footer research-shell">PRAGMA-lite is a personal research implementation, not a product.</footer>
+  </body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "task": "future_value",
+  "checkpoint": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/best.pt",
+  "encoder": "frozen EventMLMDemoModel account_embedding",
+  "task_definition": {
+    "cutoff_stride_days": 180,
+    "min_history_transactions": 20,
+    "observation_end": "2018-12-31",
+    "account_disjoint_splits": true,
+    "full_future_windows_only": true,
+    "cached_task_table": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/future_value_task_table.parquet"
+  },
+  "sample_counts": {
+    "train": 16790,
+    "valid": 3680,
+    "test": 3561
+  },
+  "protocol_caveat": "The MLM checkpoint was not horizon-restricted to every downstream cutoff. Treat this as an exploratory frozen-embedding transfer result, not a fully prospective deployment estimate.",
+  "horizon_days": 180,
+  "target": "log1p(sum(abs(amount)) in future window)",
+  "frozen_embedding_ridge_probe": {
+    "selected_ridge_alpha": 10.0,
+    "validation_mae_by_alpha": {
+      "0.01": 0.2424440155858579,
+      "0.1": 0.2424284403738768,
+      "1.0": 0.24227432556774306,
+      "10.0": 0.2412690016238586,
+      "100.0": 0.2415043820505557
+    },
+    "validation_metrics": {
+      "mae": 0.2412690016238586,
+      "rmse": 0.3762470695712881,
+      "r2": 0.8143852040641825,
+      "n_examples": 3680
+    },
+    "test_metrics": {
+      "mae": 0.2610974933149707,
+      "rmse": 0.4396221450977211,
+      "r2": 0.7796456137239256,
+      "n_examples": 3561
+    }
+  }
+}

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="PRAGMA-lite downstream results."><title>PRAGMA-lite | Results</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+  <body class="research-page">
+    <header class="research-header"><a class="research-brand" href="/"><span class="brand-mark">P.</span>PRAGMA-lite</a><nav aria-label="Site navigation"><a href="/">Home</a><a href="/architecture">Architecture</a><a href="/methodology">Method</a><a class="active" href="/results">Results</a><a href="/lab">Inference</a></nav><a class="nav-action" href="/upload">Upload CSV</a></header>
+    <main class="research-shell article-page"><div class="page-intro"><p class="page-label">Results</p><h1>Two uses for the learned account embedding</h1><p>The model is evaluated on account-disjoint snapshots. The test split was not used for tokenizer fitting, MLM training, adapter fitting, rank selection or threshold selection.</p></div><div id="home-results" class="home-results results-page-grid" aria-live="polite"></div><section class="plain-note"><h2>Why only test accounts appear in the lab</h2><p>The old lab listed train, validation and test accounts because it was built as a data explorer. That was confusing for a public demonstration. The lab now samples only the final test split, so its observed future outcomes are proper held-out examples. Training accounts are still necessary inside the training pipeline: they provide the MLM data and downstream labels used to fit weights, but they should not be presented as evidence of generalisation.</p></section></main>
+    <footer class="research-footer research-shell">Metrics are exploratory results from the committed Czech-bank experiment.</footer><script src="{{ url_for('static', filename='home.js') }}" defer></script>
+  </body>
+</html>

@@ -1,0 +1,79 @@
+{
+  "task": "cashflow_stress",
+  "task_definition": {
+    "cutoff_stride_days": 180,
+    "min_history_transactions": 20,
+    "observation_end": "2018-12-31",
+    "account_disjoint_splits": true,
+    "full_future_windows_only": true,
+    "feature_schema_fit_on_train_only": true,
+    "task_table_path": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/cashflow_stress_task_table.parquet"
+  },
+  "feature_count": 42,
+  "sample_counts": {
+    "train": 16882,
+    "valid": 3657,
+    "test": 3531
+  },
+  "low_balance_threshold": 1628.89,
+  "horizon_days": 60,
+  "prevalence_baseline": {
+    "validation_metrics": {
+      "roc_auc": 0.5,
+      "average_precision": 0.17035821711785618,
+      "brier_score": 0.1413640799176019,
+      "balanced_accuracy_at_threshold": 0.5,
+      "threshold": 0.5,
+      "positive_rate": 0.17035821711785618,
+      "n_examples": 3657,
+      "n_positive": 623
+    },
+    "test_metrics": {
+      "roc_auc": 0.5,
+      "average_precision": 0.1719059756442934,
+      "brier_score": 0.14240080858819493,
+      "balanced_accuracy_at_threshold": 0.5,
+      "threshold": 0.5,
+      "positive_rate": 0.1719059756442934,
+      "n_examples": 3531,
+      "n_positive": 607
+    },
+    "test_roc_auc_bootstrap_95_interval": [
+      0.5,
+      0.5
+    ]
+  },
+  "tabular_logistic_baseline": {
+    "selected_logistic_c": 0.01,
+    "validation_average_precision_by_c": {
+      "0.01": 0.5447924933114734,
+      "0.1": 0.5356595307735866,
+      "1.0": 0.5309957344904488,
+      "10.0": 0.530205884168694
+    },
+    "validation_metrics": {
+      "roc_auc": 0.8438245629256864,
+      "average_precision": 0.5447924933114734,
+      "brier_score": 0.10799281981865101,
+      "balanced_accuracy_at_threshold": 0.5411534444831239,
+      "threshold": 0.5,
+      "positive_rate": 0.17035821711785618,
+      "n_examples": 3657,
+      "n_positive": 623
+    },
+    "test_metrics": {
+      "roc_auc": 0.8181690131322442,
+      "average_precision": 0.4795830071944679,
+      "brier_score": 0.11359681761799473,
+      "balanced_accuracy_at_threshold": 0.5441224361473642,
+      "threshold": 0.5,
+      "positive_rate": 0.1719059756442934,
+      "n_examples": 3531,
+      "n_positive": 607
+    },
+    "test_roc_auc_bootstrap_95_interval": [
+      0.8004293275912369,
+      0.835971856201114
+    ]
+  }
+}

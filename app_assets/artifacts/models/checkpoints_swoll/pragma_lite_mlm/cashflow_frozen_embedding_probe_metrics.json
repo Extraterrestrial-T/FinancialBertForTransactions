@@ -1,0 +1,54 @@
+{
+  "task": "cashflow_stress",
+  "checkpoint": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/best.pt",
+  "encoder": "frozen EventMLMDemoModel account_embedding",
+  "task_definition": {
+    "cutoff_stride_days": 180,
+    "min_history_transactions": 20,
+    "observation_end": "2018-12-31",
+    "account_disjoint_splits": true,
+    "full_future_windows_only": true,
+    "cached_task_table": "/content/drive/MyDrive/FinancialBertForTransactions/checkpoints_swoll/pragma_lite_mlm/cashflow_stress_task_table.parquet"
+  },
+  "sample_counts": {
+    "train": 16882,
+    "valid": 3657,
+    "test": 3531
+  },
+  "protocol_caveat": "The MLM checkpoint was not horizon-restricted to every downstream cutoff. Treat this as an exploratory frozen-embedding transfer result, not a fully prospective deployment estimate.",
+  "low_balance_threshold": 1628.89,
+  "horizon_days": 60,
+  "frozen_embedding_logistic_probe": {
+    "selected_logistic_c": 1.0,
+    "validation_average_precision_by_c": {
+      "0.01": 0.4519610271951841,
+      "0.1": 0.4709775482663016,
+      "1.0": 0.47303546378985645,
+      "10.0": 0.4729113084738459
+    },
+    "validation_metrics": {
+      "roc_auc": 0.8200300288543644,
+      "average_precision": 0.47303546378985645,
+      "brier_score": 0.11325558243299827,
+      "balanced_accuracy_at_threshold": 0.6001792419989186,
+      "threshold": 0.5,
+      "positive_rate": 0.17035821711785618,
+      "n_examples": 3657,
+      "n_positive": 623
+    },
+    "test_metrics": {
+      "roc_auc": 0.8053449608646954,
+      "average_precision": 0.4617962454713175,
+      "brier_score": 0.1166164789473519,
+      "balanced_accuracy_at_threshold": 0.5948014162179948,
+      "threshold": 0.5,
+      "positive_rate": 0.1719059756442934,
+      "n_examples": 3531,
+      "n_positive": 607
+    },
+    "test_roc_auc_bootstrap_95_interval": [
+      0.7871301981075923,
+      0.8226373446456968
+    ]
+  }
+}

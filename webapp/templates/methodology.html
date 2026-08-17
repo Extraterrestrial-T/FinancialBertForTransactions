@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="PRAGMA-lite methodology and training report."><title>PRAGMA-lite | Method</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+  <body class="research-page">
+    <header class="research-header"><a class="research-brand" href="/"><span class="brand-mark">P.</span>PRAGMA-lite</a><nav aria-label="Site navigation"><a href="/">Home</a><a href="/architecture">Architecture</a><a class="active" href="/methodology">Method</a><a href="/results">Results</a><a href="/lab">Inference</a></nav><a class="nav-action" href="/upload">Upload CSV</a></header>
+    <main class="research-shell article-page">
+      <div class="page-intro"><p class="page-label">Method report</p><h1>How the model was trained and adapted</h1><p>This is the technical story behind the application. It covers the sample construction, masked financial-event modelling, the base checkpoint, and the small LoRA updates used for the two downstream tasks.</p></div>
+      <section class="method-report-grid">
+        <article><p class="section-number">Sampling</p><h2>Random cutoffs, trailing context</h2><p>During pretraining, each training account receives a different random cutoff at each epoch. The model receives every transaction known by that cutoff, then keeps the most recent 256 events. Shorter histories remain shorter and are padded only when they are batched. This exposes the model to variable sequence lengths and changing positions in an account's life.</p></article>
+        <article><p class="section-number">Objective</p><h2>Masked financial-event modelling</h2><p>A portion of event value tokens is replaced by a mask token. The model predicts the original value from the field key, the other event fields, profile state and the surrounding event history. In this project, the MLM head predicts value vocabulary IDs. It does not predict future transaction totals.</p></article>
+        <article><p class="section-number">Time</p><h2>The Czech timestamp quirk</h2><p>The public source stores dates, not time-of-day timestamps. Same-day ordering is made deterministic with transaction ID. I use day-of-week and day-of-month cycles, but intentionally omit hour-of-day features instead of pretending the data contains them.</p></article>
+        <article><p class="section-number">Adapters</p><h2>Why LoRA is small</h2><p>The base checkpoint stays frozen. LoRA adds two low-rank matrices to the History Encoder's Q, K, V and feed-forward projections. Its B matrix starts at zero, so an adapter begins as exactly the base model. Training changes only the adapter weights and a one-dimensional task head.</p></article>
+      </section>
+      <section class="loss-section"><div><p class="page-label">Pretraining trace</p><h2>Masked-event loss across 300 epochs</h2><p>The curve uses the committed checkpoint's metrics. Validation loss falls quickly, then flattens near the final value. The selected base checkpoint is the epoch with the lowest validation loss, not simply the final epoch.</p></div><div class="loss-chart-wrap"><canvas id="loss-chart" aria-label="Training and validation MLM loss by epoch"></canvas></div><p id="loss-summary" class="loss-summary"></p></section>
+      <section class="plain-note"><h2>What does and does not vary at inference time?</h2><p>You can choose a cutoff and optionally a window start. The transaction sequence can therefore be shorter than 256 events or a different trailing slice of an account's history. The model was trained with variable lengths because some accounts had fewer transactions by their random cutoff. It was not trained on arbitrary fixed-duration windows as a separate augmentation. For a long selected range, the current checkpoint still uses the latest 256 events, because that is the maximum context it saw in pretraining.</p></section>
+      <section id="use-it" class="use-section">
+        <div><p class="page-label">Use the project</p><h2>The website is only one interface</h2><p>The repository also installs a Python package named <code>pragma_lite</code>. It contains the typed account records, train-fitted tokenizers, encoders, LoRA loading contract, and notebook helpers used by this site. The shipped Czech checkpoint is useful for reproducing this project; a new transaction schema needs its tokenizer fitted on that dataset's training split and its own pretraining run.</p></div>
+        <div class="use-grid">
+          <article><h3>Use the Python library</h3><p>From the repository root, install the project in editable mode. The same import path is used by the site, scripts and notebooks.</p><pre><code>python -m pip install -e ".[notebooks,web]"
+from pragma_lite import AccountTaskPredictor
+
+predictor = AccountTaskPredictor.from_checkpoints(
+    "app_assets/artifacts/models/checkpoints_swoll/pragma_lite_mlm/best.pt",
+    "app_assets/artifacts/adaptors/future_value/future_value_lora_rank_04.pt",
+)</code></pre><p>The predictor binds the base checkpoint, its fitted tokenizers and one compatible adapter. It verifies that the adapter was trained for that exact base checkpoint before it accepts it.</p></article>
+          <article><h3>Run the notebooks in VS Code</h3><p>Open the numbered notebooks in <code>notebooks/</code>, select the repository's Python environment as the Jupyter kernel, then run them in order. They are deliberately thin interfaces over <code>pragma_lite</code>, so the model code remains importable and testable outside a notebook.</p><pre><code>./FinBert/Scripts/Activate.ps1
+python -m pip install -e ".[notebooks]"
+code notebooks/02_pretrain_mlm.ipynb</code></pre><p>On Windows PowerShell, use the activated <code>FinBert</code> environment as the notebook kernel.</p></article>
+          <article><h3>Use a Colab runtime from VS Code</h3><p>When VS Code is connected to a Colab runtime, the notebook cells execute on that runtime. Clone and install the repository into fast ephemeral <code>/content</code>; use Drive only for checkpoints and reports that must outlive the session.</p><pre><code>%cd /content
+!git clone &lt;your-repository-url&gt; FinancialBertForTransactions
+%cd /content/FinancialBertForTransactions
+!pip install -q -e .</code></pre><p>Then run the Colab setup cells in the pretraining notebook. Mount Drive only before the checkpoint cell, rather than training directly from Drive.</p></article>
+        </div>
+      </section>
+    </main>
+    <footer class="research-footer research-shell">Training data, tokenizer fitting and downstream task construction remain account-disjoint by split.</footer>
+    <script src="{{ url_for('static', filename='methodology.js') }}" defer></script>
+  </body>
+</html>

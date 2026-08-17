@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="Interactive inference lab for PRAGMA-lite."><title>PRAGMA-lite | Inference</title><link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}"></head>
+  <body class="research-page lab-screen">
+    <header class="research-header"><a class="research-brand" href="/"><span class="brand-mark">P.</span>PRAGMA-lite</a><nav aria-label="Site navigation"><a href="/">Home</a><a href="/architecture">Architecture</a><a href="/methodology">Method</a><a href="/results">Results</a><a class="active" href="/lab">Inference</a></nav><a class="nav-action" href="/upload">Upload CSV</a></header>
+    <main class="research-shell lab-main">
+      <div class="page-intro"><p class="page-label">Inference lab</p><h1>Account history at a cutoff</h1><p>Only accounts from the final test split appear here. Choose an adapter and cutoff, then optionally move the window start forward. Profile state remains attached at the cutoff, while the transaction branch sees only the selected date range.</p></div>
+      <section id="explorer" aria-labelledby="controls-title"><h2 id="controls-title" class="visually-hidden">Inference controls</h2>
+        <div class="control-panel">
+          <div class="field wide-field"><label for="adapter-select">Task adapter</label><select id="adapter-select" aria-describedby="adapter-help"></select><small id="adapter-help">The adapter is a learned low-rank update attached to the same selected base checkpoint.</small></div>
+          <div class="field"><label for="account-select">Test account</label><select id="account-select"></select></div><button id="random-account" class="button quiet random-button" type="button">Choose another</button>
+          <div class="field"><label for="cutoff-select">Cutoff</label><select id="cutoff-select"></select></div>
+          <div class="field"><label for="window-start">Window start</label><input id="window-start" type="date" aria-describedby="window-help"><small id="window-help">Blank uses all pre-cutoff events. Long windows still retain only the latest 256 events.</small></div>
+          <button id="run-prediction" class="button primary run-button" type="button">Run prediction</button>
+        </div>
+        <p id="load-status" class="status" role="status">Preparing test accounts.</p>
+        <div id="prediction-workspace" class="workspace is-hidden">
+          <div class="snapshot-bar"><span id="snapshot-title"></span><span class="snapshot-divider" aria-hidden="true"></span><span id="snapshot-meta"></span></div>
+          <section id="outcome-card" class="outcome-card" aria-labelledby="outcome-title"><div class="outcome-intro"><p class="page-label">Output</p><h3 id="outcome-title">Prediction and observed future</h3><p id="outcome-copy"></p></div><div id="outcome-metrics" class="outcome-metrics"></div></section>
+          <div class="viz-layout">
+            <section class="timeline-card" aria-labelledby="timeline-title"><div class="card-topline"><div><p class="page-label">Input and future</p><h3 id="timeline-title">Balance and transaction activity</h3></div><div class="legend"><span><i class="legend-line visible"></i>Model input</span><span><i class="legend-line future"></i>Held-out future</span><span><i class="legend-bar"></i>Amount</span></div></div><div class="canvas-wrap"><canvas id="timeline" aria-label="Interactive transaction timeline." tabindex="0"></canvas><div id="timeline-empty" class="timeline-empty is-hidden">No events in this window.</div></div><p class="chart-note">Click a dot or bar to see the transaction fields and their token buckets.</p></section>
+            <aside class="event-card" aria-labelledby="event-title"><p class="page-label">Selected transaction</p><h3 id="event-title">Choose an event</h3><div id="event-details" class="event-details"><p class="muted">The side panel shows the observed fields. Buckets appear only for rows sent into the model.</p></div></aside>
+          </div>
+          <section class="trace-card" aria-labelledby="trace-title"><div><p class="page-label">Window accounting</p><h3 id="trace-title">What entered the model</h3></div><div id="trace-steps" class="trace-steps"></div></section>
+        </div>
+      </section>
+    </main>
+    <footer class="research-footer research-shell">The lab uses the held-out test split only. Upload your own CSV on the separate upload page.</footer>
+    <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  </body>
+</html>
