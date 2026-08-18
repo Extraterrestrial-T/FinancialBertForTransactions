@@ -37,3 +37,14 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 pragma_lite = ["data/vocabulary.json"]
+
+# Vercel resolves this project with uv on Linux. Pin torch to PyTorch's CPU
+# wheel index there: the default Linux PyPI distribution pulls CUDA/NVIDIA
+# libraries that the inference-only serverless function cannot use.
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

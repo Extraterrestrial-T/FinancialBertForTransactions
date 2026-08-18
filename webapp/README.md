@@ -54,6 +54,10 @@ root as the repository root; no persistent volume or environment variables are
 required. The function bundle explicitly includes the Flask templates, package
 source, compact model release, and processed Czech demo data.
 
+The Vercel build uses uv and is configured to resolve PyTorch from PyTorch's
+CPU-only wheel index. The model runs CPU inference only; installing CUDA wheels
+would add several gigabytes of NVIDIA libraries that Vercel cannot use.
+
 During the Vercel build, `scripts/prepare_vercel_static.py` copies the browser
 assets from `webapp/static/` into `public/static/`. Vercel serves those files
 from its CDN while the single Flask Function handles all application and API
