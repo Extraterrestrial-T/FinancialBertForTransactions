@@ -54,6 +54,10 @@ root as the repository root; no persistent volume or environment variables are
 required. The function bundle explicitly includes the Flask templates, package
 source, compact model release, and processed Czech demo data.
 
+Flask is a runtime dependency in the main project dependency list because
+Vercel installs that list directly; the optional `web` extra is only needed
+for Gunicorn when using a conventional long-running host.
+
 The Vercel build uses uv and is configured to resolve PyTorch from PyTorch's
 CPU-only wheel index. The model runs CPU inference only; installing CUDA wheels
 would add several gigabytes of NVIDIA libraries that Vercel cannot use.

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 authors = [{name = "PRAGMA-lite contributors"}]
 dependencies = [
+    "flask>=3.0",
     "numpy>=1.26",
     "pandas>=2.1",
     "pyarrow>=14",
@@ -25,7 +26,6 @@ notebooks = [
 ]
 test = ["pytest>=8.0"]
 web = [
-    "flask>=3.0",
     "gunicorn>=22.0",
 ]
 
